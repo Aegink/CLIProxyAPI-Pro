@@ -15,6 +15,8 @@ func TestConvertOpenAIRequestToCodexNormalizesFastServiceTier(t *testing.T) {
 	}{
 		{name: "fast alias", serviceTier: "fast", want: "priority"},
 		{name: "priority", serviceTier: "priority", want: "priority"},
+		{name: "ultrafast", serviceTier: "ultrafast", want: "ultrafast"},
+		{name: "normalized ultrafast", serviceTier: " ULTRAFAST ", want: "ultrafast"},
 		{name: "normalized priority", serviceTier: " PRIORITY ", want: "priority"},
 		{name: "unsupported tier", serviceTier: "default"},
 		{name: "non-string tier", serviceTier: 1},

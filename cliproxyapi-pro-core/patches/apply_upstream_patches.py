@@ -3930,24 +3930,8 @@ replace_once(
     'meta[coreexecutor.SpeedMetadataKey] = speed',
 )
 
-codex_chat_completions_request = ROOT / 'internal/translator/codex/openai/chat-completions/codex_openai_request.go'
-replace_once(
-    codex_chat_completions_request,
-    '''\t// Model
-\tout, _ = sjson.SetBytes(out, "model", modelName)
-''',
-    '''\t// Model
-\tout, _ = sjson.SetBytes(out, "model", modelName)
-
-\tif serviceTier := root.Get("service_tier"); serviceTier.Type == gjson.String {
-\t\tswitch strings.ToLower(strings.TrimSpace(serviceTier.String())) {
-\t\tcase "fast", "priority":
-\t\t\tout, _ = sjson.SetBytes(out, "service_tier", "priority")
-\t\t}
-\t}
-''',
-    'case "fast", "priority":',
-)
+# Upstream v7.3.19 owns Chat Completions service-tier normalization, including
+# fast, priority, and ultrafast. Keep regression coverage without rewriting it.
 queue_go_source('internal/translator/codex/openai/chat-completions/codex_fast_service_tier_test.go')
 
 # Upstream v7.3.8 owns Responses service-tier normalization, including the
@@ -7514,7 +7498,6 @@ format_go_writes([
     'internal/runtime/executor/xai_quota_observer.go',
     'internal/runtime/executor/xai_websockets_executor.go',
     'internal/translator/codex/openai/chat-completions/codex_fast_service_tier_test.go',
-    'internal/translator/codex/openai/chat-completions/codex_openai_request.go',
     'internal/translator/codex/openai/responses/codex_fast_service_tier_test.go',
     'sdk/auth/codex_device.go',
     'sdk/auth/filestore.go',
