@@ -2053,7 +2053,7 @@ write(legacy_gemini_quota_test_target, re.sub(r'github\.com/router-for-me/CLIPro
 plugin_quota_management = ROOT / 'internal/api/handlers/management/pro_plugin_quota.go'
 write(plugin_quota_management, re.sub(r'github\.com/router-for-me/CLIProxyAPI/v\d+', MODULE_PATH, read_text(Path(__file__).resolve().parent / 'plugin_quota_management.go')))
 plugin_quota_management_test = ROOT / 'internal/api/handlers/management/pro_plugin_quota_test.go'
-write(plugin_quota_management_test, read_text(Path(__file__).resolve().parent / 'plugin_quota_management_test.go'))
+write(plugin_quota_management_test, re.sub(r'github\.com/router-for-me/CLIProxyAPI/v\d+', MODULE_PATH, read_text(Path(__file__).resolve().parent / 'plugin_quota_management_test.go')))
 
 for source_name, target_name in (
     ('account_inspection_host.go', 'account_inspection_host.go'),
@@ -2183,26 +2183,13 @@ insert_before(
     'const apiKeyPolicyManagementSessionContextKey',
 )
 
+# All successful saves, including generic v8 writes, take this locked snapshot.
+# Track key changes here rather than only in the legacy persistLocked path.
 replace_once(
     management_handler_source,
-    '''\tif err := config.SaveConfigPreserveComments(h.configFilePath, h.cfg); err != nil {
-''',
-    '''\tif err := config.SaveConfigPreserveComments(h.configFilePath, h.cfg); err != nil {
-''',
-    'config.SaveConfigPreserveComments(h.configFilePath, h.cfg)',
-)
-replace_once(
-    management_handler_source,
-    '''\t\treturn false
-\t}
-\tsnapshot := h.reloadSnapshotConfigLocked()
-''',
-    '''\t\treturn false
-\t}
-\th.updateAPIKeyConfigGenerationLocked()
-\tsnapshot := h.reloadSnapshotConfigLocked()
-''',
-    'h.updateAPIKeyConfigGenerationLocked()\n\tsnapshot := h.reloadSnapshotConfigLocked()',
+    '\th.reloadGeneration++\n',
+    '\th.updateAPIKeyConfigGenerationLocked()\n\th.reloadGeneration++\n',
+    'h.updateAPIKeyConfigGenerationLocked()\n\th.reloadGeneration++',
 )
 
 server_source = ROOT / 'internal/api/server.go'
@@ -4184,6 +4171,18 @@ tracked_closure_execution = '''\t\t\texecute := func() (cliproxyexecutor.Respons
 \t\t\t\treturn selection.Executor.Execute(attemptCtx, preparedAuth, execReq, execOpts)
 \t\t\t}
 '''
+# v8 resolves the executor for the prepared auth before invoking the closure.
+# Keep that selection for both token counting and execution, including retries.
+home_executor_selection = '\t\t\texecutor := executorForAuth(selection.Executor, preparedAuth)\n'
+if home_executor_selection in read(auth_conductor_home_execution):
+    closure_execution = closure_execution.replace(
+        '\t\t\texecute := func()', home_executor_selection + '\t\t\texecute := func()', 1,
+    ).replace('selection.Executor.CountTokens(', 'executor.CountTokens(').replace(
+        'selection.Executor.Execute(', 'executor.Execute(',
+    )
+    tracked_closure_execution = home_executor_selection + tracked_closure_execution.replace(
+        'selection.Executor.CountTokens(', 'executor.CountTokens(',
+    ).replace('selection.Executor.Execute(', 'executor.Execute(')
 replace_once(
     auth_conductor_home_execution,
     closure_execution,
@@ -4825,15 +4824,10 @@ replace_once(
     '  panel-github-repository: "https://github.com/router-for-me/Cli-Proxy-API-Management-Center"',
     f'  panel-github-repository: "{PRO_PANEL_REPOSITORY}"',
 )
-replace_once(
+insert_before(
     config_example,
-    '''      mode: "safe" # enum example: safe, fast
-
-# When true, disable high-overhead request logging and HTTP middleware features to reduce per-request memory usage under high concurrency.
-''',
-    '''      mode: "safe" # enum example: safe, fast
-
-    # Optional Pro plugin: subtract xAI OAuth models by detected account plan.
+    '    example:\n',
+    '''    # Optional Pro plugin: subtract xAI OAuth models by detected account plan.
     # oauth-model-policy:
     #   enabled: true
     #   priority: 10
@@ -4849,7 +4843,6 @@ replace_once(
     #         _unknown:
     #           excluded-models: ["grok-pro-*"]
 
-# When true, disable high-overhead request logging and HTTP middleware features to reduce per-request memory usage under high concurrency.
 ''',
     'Optional Pro plugin: subtract xAI OAuth models by detected account plan.',
 )
@@ -6478,9 +6471,10 @@ add_go_import(run, '"' + import_path('internal/config') + '"\n', '\t"' + import_
 insert_before(
     run,
     '// StartService builds and runs the proxy service using the exported SDK.\n',
-    'func applyProRequiredStartupConfig(cfg *config.Config, configPath string) {\n\tif cfg == nil {\n\t\treturn\n\t}\n\tshouldPersistUsageStatistics := !cfg.UsageStatisticsEnabled\n\tshouldPersistPanelRepository := cfg.RemoteManagement.PanelGitHubRepository != config.DefaultPanelGitHubRepository\n\tcfg.UsageStatisticsEnabled = true\n\tcfg.RemoteManagement.PanelGitHubRepository = config.DefaultPanelGitHubRepository\n\tif configPath == "" {\n\t\treturn\n\t}\n\tif shouldPersistUsageStatistics {\n\t\tif _, err := config.SaveConfigPreserveCommentsUpdateExistingScalars(configPath, []config.ExistingScalarUpdate{{Path: []string{"usage-statistics-enabled"}, Value: true}}); err != nil {\n\t\t\tlog.Warnf("failed to update existing usage statistics config: %v", err)\n\t\t}\n\t}\n\tif shouldPersistPanelRepository {\n\t\tif _, err := config.SaveConfigPreserveCommentsUpdateExistingScalars(configPath, []config.ExistingScalarUpdate{{Path: []string{"remote-management", "panel-github-repository"}, Value: config.DefaultPanelGitHubRepository}}); err != nil {\n\t\t\tlog.Warnf("failed to update existing panel repository config: %v", err)\n\t\t}\n\t}\n}\n\n',
+    'func applyProRequiredStartupConfig(cfg *config.Config, configPath string) {\n\tif cfg == nil {\n\t\treturn\n\t}\n\tshouldPersistUsageStatistics := !cfg.UsageStatisticsEnabled\n\tshouldPersistPanelRepository := cfg.RemoteManagement.PanelGitHubRepository != config.DefaultPanelGitHubRepository\n\tcfg.UsageStatisticsEnabled = true\n\tcfg.RemoteManagement.PanelGitHubRepository = config.DefaultPanelGitHubRepository\n\tif configPath == "" {\n\t\treturn\n\t}\n\tpersistExisting := func(value any, paths ...[]string) {\n\t\tfor _, path := range paths {\n\t\t\tmissing, err := config.SaveConfigPreserveCommentsUpdateExistingScalars(configPath, []config.ExistingScalarUpdate{{Path: path, Value: value}})\n\t\t\tif err != nil {\n\t\t\t\tlog.Warnf("failed to update existing required startup config %v: %v", path, err)\n\t\t\t\treturn\n\t\t\t}\n\t\t\tif len(missing) == 0 {\n\t\t\t\treturn\n\t\t\t}\n\t\t}\n\t}\n\tif shouldPersistUsageStatistics {\n\t\tpersistExisting(true, []string{"observability", "usage", "usage-statistics-enabled"}, []string{"usage-statistics-enabled"})\n\t}\n\tif shouldPersistPanelRepository {\n\t\tpersistExisting(config.DefaultPanelGitHubRepository, []string{"management", "panel-github-repository"}, []string{"remote-management", "panel-github-repository"})\n\t}\n}\n\n',
     'func applyProRequiredStartupConfig',
 )
+queue_go_source('internal/cmd/pro_startup_config_test.go')
 insert_before_nth(
     run,
     '''\tservice, err := builder.Build()

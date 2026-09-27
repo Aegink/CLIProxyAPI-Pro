@@ -42,6 +42,7 @@ func migrateLegacySettings(ctx context.Context, configFilePath string) (bool, er
 		return false, fmt.Errorf("invalid config.yaml document structure")
 	}
 	root := document.Content[0]
+	proxyMapping := configProxyMapping(root)
 	plugins := mapValue(root, "plugins")
 	configs := mapValue(plugins, "configs")
 	legacyProxy := mapValue(configs, legacyProxyPoolID)
@@ -62,7 +63,7 @@ func migrateLegacySettings(ctx context.Context, configFilePath string) (bool, er
 			return false, err
 		}
 		restoreProxyURL = scalarMapValue(legacyProxy, "restore-proxy-url")
-		if isProxyPoolURL(scalarMapValue(root, "proxy-url"), proxyCfg.Listen) {
+		if isProxyPoolURL(scalarMapValue(proxyMapping, "proxy-url"), proxyCfg.Listen) {
 			proxyCfg.TakeoverEnabled = true
 		}
 		if err := migrateSettingIfMissing(ctx, settings.NamespaceProxyPool, func() ([]byte, error) {
@@ -87,11 +88,15 @@ func migrateLegacySettings(ctx context.Context, configFilePath string) (bool, er
 		}
 	}
 
-	if legacyProxy != nil && isProxyPoolURL(scalarMapValue(root, "proxy-url"), proxyCfg.Listen) {
-		if strings.TrimSpace(restoreProxyURL) == "" {
+	if legacyProxy != nil && isProxyPoolURL(scalarMapValue(proxyMapping, "proxy-url"), proxyCfg.Listen) {
+		// A removed v8 value must not expose a shadowed legacy pool endpoint.
+		if proxyMapping != root {
 			removeMapKey(root, "proxy-url")
+		}
+		if strings.TrimSpace(restoreProxyURL) == "" {
+			removeMapKey(proxyMapping, "proxy-url")
 		} else {
-			setMapScalar(root, "proxy-url", restoreProxyURL)
+			setMapScalar(proxyMapping, "proxy-url", restoreProxyURL)
 		}
 	}
 	removeMapKey(configs, legacyProxyPoolID)
@@ -121,10 +126,19 @@ func baseProxyURLFromConfigFile(configFilePath, fallback string) string {
 	if root.Kind != yaml.MappingNode {
 		return strings.TrimSpace(fallback)
 	}
-	if value := mapValue(root, "proxy-url"); value != nil && value.Kind == yaml.ScalarNode {
+	if value := mapValue(configProxyMapping(root), "proxy-url"); value != nil && value.Kind == yaml.ScalarNode {
 		return strings.TrimSpace(value.Value)
 	}
 	return ""
+}
+
+// Presence gives v8 precedence even when its proxy URL is explicitly empty.
+func configProxyMapping(root *yaml.Node) *yaml.Node {
+	requests := mapValue(root, "requests")
+	if mapValue(requests, "proxy-url") != nil {
+		return requests
+	}
+	return root
 }
 
 func migrateSettingIfMissing(ctx context.Context, namespace string, encode func() ([]byte, error)) error {

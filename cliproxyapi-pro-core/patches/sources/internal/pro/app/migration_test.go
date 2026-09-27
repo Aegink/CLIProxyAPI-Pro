@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	internalconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/config"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/embeddedusage"
 	modelconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/pro/oauthpolicy/config"
 	proxyconfig "github.com/router-for-me/CLIProxyAPI/v7/internal/pro/proxypool/config"
@@ -156,26 +157,58 @@ plugins:
 }
 
 func TestRuntimeUsesRestoredBaseProxyDuringMigrationStartup(t *testing.T) {
-	ctx := startMigrationStore(t)
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	source := `proxy-url: socks5://127.0.0.1:8318
-plugins:
-  configs:
-    proxy-pool:
-      enabled: false
-      listen: 127.0.0.1:8318
-      restore-proxy-url: http://base.example:8080
-`
-	if err := os.WriteFile(configPath, []byte(source), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	runtime, err := New(ctx, configPath, "socks5://127.0.0.1:8318")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(runtime.Close)
-	if got := runtime.BaseProxyURL(); got != "http://base.example:8080" {
-		t.Fatalf("runtime base proxy = %q", got)
+	for _, tc := range []struct {
+		name, prefix, restore, want string
+		modelOnly                   bool
+	}{
+		{"legacy", "proxy-url: socks5://127.0.0.1:8318\n", "http://base.example:8080", "http://base.example:8080", false},
+		{"v8", "requests: {proxy-url: socks5://127.0.0.1:8318}\n", "http://base.example:8080", "http://base.example:8080", false},
+		{"v8-empty-restore", "proxy-url: socks5://127.0.0.1:8318\nrequests: {proxy-url: socks5://127.0.0.1:8318}\n", "", "", false},
+		{"v8-explicit-empty", "proxy-url: socks5://127.0.0.1:8318\nrequests: {proxy-url: ''}\n", "http://base.example:8080", "", false},
+		{"v8-model-only", "requests: {proxy-url: http://base.example:8080}\n", "", "http://base.example:8080", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := startMigrationStore(t)
+			configPath := filepath.Join(t.TempDir(), "config.yaml")
+			source := tc.prefix + "plugins:\n  configs:\n    proxy-pool:\n      enabled: false\n      listen: 127.0.0.1:8318\n      restore-proxy-url: '" + tc.restore + "'\n"
+			if tc.modelOnly {
+				source = tc.prefix + "plugins:\n  configs:\n    oauth-model-policy: {enabled: true, providers: {}}\n"
+			}
+			if err := os.WriteFile(configPath, []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			runtime, err := New(ctx, configPath, "socks5://127.0.0.1:8318")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(runtime.Close)
+			if got := runtime.BaseProxyURL(); got != tc.want {
+				t.Errorf("runtime base proxy = %q, want %q", got, tc.want)
+			}
+			saved, err := internalconfig.LoadConfig(configPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if saved.ProxyURL != tc.want {
+				t.Errorf("reloaded proxy = %q, want %q", saved.ProxyURL, tc.want)
+			}
+			if !tc.modelOnly {
+				item, found, err := embeddedusage.GetProSetting(ctx, embeddedusage.ProSettingNamespaceProxyPool)
+				if err != nil || !found {
+					t.Fatalf("proxy migration missing: %v", err)
+				}
+				cfg, err := proxyconfig.Parse(item.Settings)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if cfg.TakeoverEnabled != (tc.name != "v8-explicit-empty") {
+					t.Errorf("takeover = %v", cfg.TakeoverEnabled)
+				}
+			}
+			if changed, err := migrateLegacySettings(ctx, configPath); err != nil || changed {
+				t.Fatalf("not idempotent: %v %v", changed, err)
+			}
+		})
 	}
 }
 
