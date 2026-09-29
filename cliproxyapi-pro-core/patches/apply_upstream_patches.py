@@ -615,13 +615,9 @@ codex_device = ROOT / 'sdk/auth/codex_device.go'
 replace_once(
     codex_device,
     '''	metadata := map[string]any{
-		"email": tokenStorage.Email,
-	}
 ''',
     '''	metadata := map[string]any{
-		"email":      tokenStorage.Email,
 		"account_id": tokenStorage.AccountID,
-	}
 ''',
     '"account_id": tokenStorage.AccountID',
 )
@@ -6077,8 +6073,8 @@ for relative_path in (
 ):
     replace_once(
         ROOT / relative_path,
-        '\twsReqBody := buildCodexWebsocketRequestBody(upstreamBody)',
-        '\twsReqBody := buildCodexWebsocketRequestBody(upstreamBody)\n\treporter.ObserveUpstreamRequestModel(wsReqBody)',
+        '\twsReqLog := helps.UpstreamRequestLog{',
+        '\treporter.ObserveUpstreamRequestModel(wsReqBody)\n\twsReqLog := helps.UpstreamRequestLog{',
         'reporter.ObserveUpstreamRequestModel(wsReqBody)',
     )
 replace_once(
