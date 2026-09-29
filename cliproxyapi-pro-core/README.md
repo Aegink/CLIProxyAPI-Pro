@@ -136,17 +136,20 @@ API 密钥工作区支持按 Key 设置并发请求上限（`0` 不限，最大 
 - Antigravity
 - Claude
 - Codex
+- Devin
 - Gemini CLI
 - Kimi
+- Meta
 - xAI
 
 管理页面通过 `/usage/quota-cache` 读写该缓存，因此配额卡片可在页面刷新、浏览器切换和后端重启后恢复。
 
 ### QuotaProvider 插件协议
 
-补丁层为 upstream 插件 SDK/ABI 增加可选 `QuotaProvider` 能力，并提供
-`POST /v0/management/quota/fetch`。宿主负责回调生命周期、规范化快照、SQLite 持久化以及
-套餐信息的 last-known-good 保留。当前 Gemini CLI 插件无需修改：Core 会通过插件已有的
+复用 upstream 插件 SDK/ABI 的 `QuotaProvider` 能力和宿主调用生命周期。
+`POST /v0/management/quota/fetch` 与 `POST /v8/management/credentials/quota/fetch`
+共用 Pro 的规范化快照、SQLite 持久化和套餐信息 last-known-good 流程。
+当前 Gemini CLI 插件无需修改：Core 会通过插件已有的
 `Executor.HttpRequest` 提供兼容适配；插件未来原生实现协议后会自动优先使用原生能力。
 协议字段与兼容策略见 [QUOTA_PROVIDER.md](QUOTA_PROVIDER.md)。
 

@@ -194,8 +194,9 @@ def assert_missing_startup_fields(text):
 
 
 class ScenarioProcess:
-    def __init__(self, binary, output_root, scenario_id, config_text):
+    def __init__(self, binary, output_root, scenario_id, config_text, usage_enabled=False):
         self.binary = binary
+        self.usage_enabled = usage_enabled
         self.root = output_root / scenario_id
         self.root.mkdir(parents=True, exist_ok=True)
         self.config = self.root / "config.yaml"
@@ -212,7 +213,7 @@ class ScenarioProcess:
         environment = os.environ.copy()
         environment.update({
             "USAGE_DB_PATH": str(self.root / "usage.sqlite"),
-            "USAGE_SERVICE_ENABLED": "false",
+            "USAGE_SERVICE_ENABLED": str(self.usage_enabled).lower(),
         })
         self.log = self.log_path.open("w", encoding="utf-8")
         self.process = subprocess.Popen(

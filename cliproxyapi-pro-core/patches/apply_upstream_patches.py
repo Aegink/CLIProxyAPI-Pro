@@ -4237,25 +4237,6 @@ replace_once(
 )
 replace_once(
     usage_helpers,
-    '''\tusageNode := gjson.GetBytes(payload, "usage")
-\tif !usageNode.Exists() {
-\t\treturn usage.Detail{}, false
-\t}
-\treturn parseClaudeUsageNode(usageNode), true
-''',
-    '''\tusageNode := gjson.GetBytes(payload, "usage")
-\tif !usageNode.Exists() {
-\t\tusageNode = gjson.GetBytes(payload, "message.usage")
-\t}
-\tif !usageNode.Exists() {
-\t\treturn usage.Detail{}, false
-\t}
-\treturn parseClaudeUsageNode(usageNode), true
-''',
-    'usageNode = gjson.GetBytes(payload, "message.usage")',
-)
-replace_once(
-    usage_helpers,
     '''\t\tCacheReadTokens:     cacheReadTokens,
 \t\tCacheCreationTokens: cacheCreationTokens,
 \t}
@@ -4266,24 +4247,6 @@ replace_once(
 \t}
 ''',
     'ResponseSpeed:       strings.TrimSpace(usageNode.Get("speed").String())',
-)
-replace_once(
-    usage_helpers,
-    '''func (r *UsageReporter) PublishFailure(ctx context.Context, errs ...error) {
-\tr.publishWithOutcome(ctx, usage.Detail{}, true, failFromErrors(errs...))
-}
-''',
-    '''func (r *UsageReporter) PublishFailure(ctx context.Context, errs ...error) {
-\tr.publishWithOutcome(ctx, usage.Detail{}, true, failFromErrors(errs...))
-}
-
-// PublishFailureWithDetail emits one failed record while preserving usage
-// already observed before a streaming request terminated.
-func (r *UsageReporter) PublishFailureWithDetail(ctx context.Context, detail usage.Detail, errs ...error) {
-\tr.publishWithOutcome(ctx, detail, true, failFromErrors(errs...))
-}
-''',
-    'func (r *UsageReporter) PublishFailureWithDetail(',
 )
 replace_once(
     usage_helpers,
@@ -4327,21 +4290,9 @@ replace_once(
     'responseSpeed := strings.TrimSpace(detail.ResponseSpeed)',
 )
 
-stream_usage_failure_signature = 'func (b *StreamUsageBuffer) PublishFailure(ctx context.Context, reporter *UsageReporter, errs ...error) bool'
-stream_usage_failure_function = '''func (b *StreamUsageBuffer) PublishFailure(ctx context.Context, reporter *UsageReporter, errs ...error) bool {
-\tif b == nil || !b.ok || reporter == nil {
-\t\treturn false
-\t}
-\treporter.PublishFailureWithDetail(ctx, b.detail, errs...)
-\treturn true
-}
-'''
-replace_go_function(
-    usage_helpers,
-    stream_usage_failure_signature,
-    stream_usage_failure_function,
-    stream_usage_failure_signature + ' {\n\tif b == nil || !b.ok || reporter == nil {',
-)
+# Upstream owns nested Claude usage parsing, failure-detail publication and
+# StreamUsageBuffer failure model fallback, including failures before usage.
+# Keep only Pro speed/accounting extensions above; do not replace that lifecycle.
 
 claude_execute = ROOT / 'internal/runtime/executor/claude_executor_execute.go'
 replace_once(
@@ -6276,6 +6227,13 @@ replace_once(
     server_management,
     '\t\tmgmt.POST("/quota/fetch", s.mgmt.FetchCredentialQuota)\n',
     '\t\tmgmt.POST("/quota/fetch", s.mgmt.FetchProPluginQuota)\n',
+)
+
+# Both Management API generations share normalization, auth updates and Pro persistence.
+replace_once(
+    ROOT / 'internal/api/server_management_v8.go',
+    '\tv8.POST("/credentials/quota/fetch", s.mgmt.FetchCredentialQuota)\n',
+    '\tv8.POST("/credentials/quota/fetch", s.mgmt.FetchProPluginQuota)\n',
 )
 
 auth_files_handler = ROOT / 'internal/api/handlers/management/auth_files.go'

@@ -1,4 +1,4 @@
-# Latest-only ownership review for Core v7.3.7.
+# Latest-only ownership review for Core v8.0.4 (d33f63f8).
 # Categories describe the whole Pro delta for each modified upstream file.
 # The current roadmap keeps host business-state extensions in host patches;
 # this review does not assume or require a plugin migration.
@@ -14,6 +14,7 @@ internal/api/handlers/management/handler.go	must-remain-host-patch	management-au
 internal/api/handlers/management/plugins.go	generic-host-hook	plugin-quota	upstream-quota-capability-metadata
 internal/api/server.go	must-remain-host-patch	api-key-policy	retain-request-policy-composition-and-shutdown
 internal/api/server_management.go	must-remain-host-patch	management-routes	retain-management-auth-and-mixed-pro-route-composition-while-narrowing-plugin-owned-routes
+internal/api/server_management_v8.go	must-remain-host-patch	quota-management	share-pro-quota-fetch-persistence-across-v0-and-v8
 internal/api/server_middleware.go	must-remain-host-patch	api-key-policy	retain-authenticated-key-policy-and-quota-admission
 internal/api/server_options.go	must-remain-host-patch	api-key-policy	retain-host-policy-composition-option
 internal/api/server_reload.go	must-remain-host-patch	api-key-policy	retain-atomic-configured-key-publication

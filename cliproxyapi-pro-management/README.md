@@ -73,8 +73,10 @@ UI 会在主布局中启动 `QuotaPersistenceBootstrap`，把已保存的配额�
 - Antigravity
 - Claude
 - Codex
+- Devin
 - Gemini CLI
 - Kimi
+- Meta
 - xAI
 
 认证文件页的非运行时账号卡片还提供“测试连接”入口。弹窗复用上游 `GET /v0/management/auth-files/models` 读取测试模型；Pro 后端在账号被禁用、上游不再注册其模型时，会让该接口回落到对应提供商的静态模型定义。随后通过 `POST /v0/management/auth-files/test` 将一次最小真实生成请求固定到当前 `auth_index`；成功时展示模型输出和耗时，失败时展示上游 HTTP 状态、错误码与脱敏后的错误详情。被禁用或处于冷却状态的账号也可独立测试，测试不会改动用户设置的禁用开关，也不会产生请求监控记录。

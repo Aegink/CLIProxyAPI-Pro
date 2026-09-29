@@ -50,6 +50,9 @@ func (h *Host) FetchProQuotaWithSelection(ctx context.Context, auth *coreauth.Au
 	if provider == "" {
 		return QuotaResult{}
 	}
+	// Snapshot identity fences unload/reload even when ID, path and version are reused.
+	// A concurrent host reconfiguration conservatively requires a fresh fetch.
+	snapshot := h.snapshot.Load()
 	var record *capabilityRecord
 	if pluginID != "" {
 		record = h.quotaProviderRecordByPlugin(pluginID)
@@ -60,7 +63,7 @@ func (h *Host) FetchProQuotaWithSelection(ctx context.Context, auth *coreauth.Au
 		}
 	}
 	if record != nil {
-		resp, errFetch := h.callFetchQuota(ctx, *record, record.plugin.Capabilities.QuotaProvider, auth, previous, provider)
+		resp, errFetch := h.callFetchQuota(ctx, *record, snapshot, auth, previous, provider)
 		if errFetch != nil {
 			return QuotaResult{Handled: true, PluginID: record.id, UpstreamStatus: quotaUpstreamStatus(errFetch), Err: errFetch}
 		}
@@ -74,6 +77,9 @@ func (h *Host) FetchProQuotaWithSelection(ctx context.Context, auth *coreauth.Au
 		resp, errFetch := h.fetchLegacyGeminiCLIQuota(ctx, auth)
 		if errFetch != nil {
 			return QuotaResult{Handled: true, PluginID: record.id, UpstreamStatus: quotaUpstreamStatus(errFetch), Err: errFetch}
+		}
+		if h.snapshot.Load() != snapshot || !h.recordCurrent(record) {
+			return QuotaResult{Handled: true, PluginID: record.id, Err: fmt.Errorf("quota provider is unavailable")}
 		}
 		return h.quotaResultFromResponse(record.id, provider, auth, previous, resp)
 	}
@@ -154,11 +160,13 @@ func (h *Host) boundQuotaAuthUpdate(data pluginapi.AuthData, auth *coreauth.Auth
 	return updated
 }
 
-func (h *Host) callFetchQuota(ctx context.Context, record capabilityRecord, provider pluginapi.QuotaProvider, auth *coreauth.Auth, previous *pluginapi.QuotaSnapshot, selectedProvider string) (resp pluginapi.QuotaFetchResponse, err error) {
-	if h == nil || provider == nil || auth == nil || h.isPluginFused(record.id) || !h.recordCurrent(record) {
+func (h *Host) callFetchQuota(ctx context.Context, record capabilityRecord, snapshot any, auth *coreauth.Auth, previous *pluginapi.QuotaSnapshot, selectedProvider string) (resp pluginapi.QuotaFetchResponse, err error) {
+	if h == nil || auth == nil || h.snapshot.Load() != snapshot || !h.recordCurrent(record) {
 		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("quota provider is unavailable")
 	}
-	resp, handled, err := h.callQuotaFetch(ctx, record, provider, pluginapi.QuotaFetchRequest{
+	// Native dispatch owns panic isolation, fuse checks and host config.
+	// Keep the selected record only for response identity and the unload generation fence.
+	resp, handled, err := h.FetchQuotaByPlugin(ctx, record.id, pluginapi.QuotaFetchRequest{
 		Plugin:       clonePluginMetadata(record.meta),
 		AuthIndex:    auth.Index,
 		Provider:     selectedProvider,
@@ -168,13 +176,12 @@ func (h *Host) callFetchQuota(ctx context.Context, record capabilityRecord, prov
 		Metadata:     cloneAnyMap(auth.Metadata),
 		Attributes:   cloneStringMap(auth.Attributes),
 		Previous:     proquota.CloneSnapshot(previous),
-		Host:         h.hostConfigSummary(),
 		HTTPClient:   h.newHTTPClient(auth, auth.Provider),
 	})
 	if err != nil {
 		return pluginapi.QuotaFetchResponse{}, err
 	}
-	if !handled {
+	if !handled || h.snapshot.Load() != snapshot || !h.recordCurrent(record) {
 		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("quota provider is unavailable")
 	}
 	return resp, nil

@@ -2133,6 +2133,23 @@ def patch_auth_files_page_sorting_latest(target: Path) -> None:
     replace_once(page_path, '          sortMode={sortMode}\n', '          sortMode={effectiveSortMode}\n')
 
 
+def patch_visual_config_layout(target: Path) -> None:
+    path = target / 'src/hooks/useVisualConfig.ts'
+    replace_once(path,
+        "import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument } from 'yaml';",
+        "import { isMap, isScalar, isSeq, parseDocument } from 'yaml';\n"
+        "import { readVisualConfigLayout, editVisualConfigLayout } from '@/utils/visualConfigLayout';")
+    replace_once(path,
+        'const parsedRaw: unknown = parseYaml(yamlContent) || {};',
+        'const parsedRaw: unknown = readVisualConfigLayout(yamlContent) || {};')
+    replace_once(path,
+        '        const doc = parseDocument(currentYaml);',
+        '        const layout = editVisualConfigLayout(currentYaml);\n        const doc = layout.doc;')
+    replace_once(path,
+        '        return doc.toString({ indent: 2, lineWidth: 120, minContentWidth: 0 });',
+        '        return layout.finish();')
+
+
 def main() -> None:
     if len(sys.argv) > 2:
         raise SystemExit('Usage: apply_customizations.py [target_dir]')
@@ -2143,6 +2160,7 @@ def main() -> None:
         raise SystemExit(f'Overlay directory not found: {OVERLAY_DIR}')
 
     copy_overlay(target)
+    patch_visual_config_layout(target)
     patch_modal_focus_restore(target)
     patch_modal_lifecycle(target)
     patch_sheet_lifecycle(target)

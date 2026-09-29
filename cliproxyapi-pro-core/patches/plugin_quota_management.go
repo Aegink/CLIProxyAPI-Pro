@@ -41,7 +41,9 @@ func (h *Handler) FetchProPluginQuota(c *gin.Context) {
 	host := h.pluginHost
 	h.mu.Unlock()
 	result := host.FetchProQuotaWithSelection(ctx, auth, previous, req.PluginID, req.Provider)
-	if !result.Handled && result.Err == nil {
+	// Explicit selections must never fall back to a credential-local probe.
+	if !result.Handled && result.Err == nil && strings.TrimSpace(req.PluginID) == "" &&
+		(strings.TrimSpace(req.Provider) == "" || strings.EqualFold(strings.TrimSpace(req.Provider), strings.TrimSpace(auth.Provider))) {
 		if probe, ok := auth.Metadata["quota_probe"].(map[string]any); ok {
 			resp, handled, err := h.executeQuotaProbe(c, auth, probe)
 			result = pluginhost.QuotaResult{Handled: handled, Response: resp, Err: err}

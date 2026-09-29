@@ -102,9 +102,7 @@ func TestStreamUsageBufferPublishFailurePreservesObservedUsage(t *testing.T) {
 	ctx := context.Background()
 	reporter := NewUsageReporter(ctx, "claude", "claude-stream-failure-test", nil)
 	var buffer StreamUsageBuffer
-	if buffer.PublishFailure(ctx, reporter, errors.New("before usage")) {
-		t.Fatal("PublishFailure() = true before usage was observed")
-	}
+	buffer.ObserveClaudeStream([]byte(`data: {"type":"message_start","message":{"model":"claude-served-model"}}`))
 	buffer.ObserveClaude(usage.Detail{
 		InputTokens:     10,
 		CacheReadTokens: 3,
@@ -124,6 +122,9 @@ func TestStreamUsageBufferPublishFailurePreservesObservedUsage(t *testing.T) {
 			t.Fatal("timed out waiting for failed usage record")
 		}
 	}
+	if record.ResponseModel != "claude-served-model" {
+		t.Fatalf("ResponseModel = %q, want buffer model fallback", record.ResponseModel)
+	}
 	if !record.Failed || record.Fail.Body != "stream canceled" {
 		t.Fatalf("record failure = (%v, %q), want failed stream cancellation", record.Failed, record.Fail.Body)
 	}
@@ -136,6 +137,59 @@ func TestStreamUsageBufferPublishFailurePreservesObservedUsage(t *testing.T) {
 			t.Fatalf("received duplicate usage record: %+v", duplicate)
 		}
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestStreamUsageBufferFailureWithoutUsagePreservesModel(t *testing.T) {
+	for _, authoritative := range []string{"", "authoritative-model"} {
+		t.Run(authoritative, func(t *testing.T) {
+			plugin := &captureUsageSpeedPlugin{records: make(chan usage.Record, 4)}
+			pluginName := "usage-buffer-no-tokens-" + authoritative
+			usage.RegisterNamedPlugin(pluginName, plugin)
+			defer usage.UnregisterNamedPlugin(pluginName, plugin)
+			ctx := context.Background()
+			reporter := NewUsageReporter(ctx, "openai", pluginName, nil)
+			if authoritative != "" {
+				reporter.SetResponseModel(authoritative)
+			}
+			var buffer StreamUsageBuffer
+			buffer.ObserveOpenAIStream([]byte(`data: {"model":"buffer-model","choices":[]}`))
+			if !buffer.PublishFailure(ctx, reporter, errors.New("failed before usage")) {
+				t.Fatal("a failure without token usage must still be published")
+			}
+			deadline := time.After(2 * time.Second)
+			for {
+				select {
+				case record := <-plugin.records:
+					if record.Model != pluginName {
+						continue
+					}
+					want := authoritative
+					if want == "" {
+						want = "buffer-model"
+					}
+					if !record.Failed || record.ResponseModel != want || record.Detail.TotalTokens != 0 || record.Fail.Body != "failed before usage" {
+						t.Fatalf("unexpected failed record: %+v", record)
+					}
+					return
+				case <-deadline:
+					t.Fatal("failed usage event was not delivered")
+				}
+			}
+		})
+	}
+}
+
+func TestStreamUsageBufferFailureNilDependencies(t *testing.T) {
+	ctx := context.Background()
+	var absent *StreamUsageBuffer
+	reporter := NewUsageReporter(ctx, "openai", "nil-buffer", nil)
+	if absent.PublishFailure(ctx, reporter, errors.New("failure")) {
+		t.Fatal("nil buffer published a failure")
+	}
+	var buffer StreamUsageBuffer
+	if buffer.PublishFailure(ctx, nil, errors.New("failure")) {
+		t.Fatal("nil reporter published a failure")
 	}
 }
 

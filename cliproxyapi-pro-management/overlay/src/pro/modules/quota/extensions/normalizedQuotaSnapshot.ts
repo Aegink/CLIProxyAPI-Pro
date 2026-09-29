@@ -6,10 +6,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isNormalizedGeminiQuotaSnapshot = (data: unknown): boolean =>
   isRecord(data) && data.status === undefined && Array.isArray(data.items);
 
-export const isAuthCardQuotaCacheDataCompatible = (
-  provider: string,
-  data: unknown
-): boolean => {
+const isMetaQuotaData = (value: unknown): value is Record<string, unknown> => {
+  return isRecord(value) && Array.isArray(value.windows);
+};
+
+export const isAuthCardQuotaCacheDataCompatible = (provider: string, data: unknown): boolean => {
   if (provider === 'gemini-cli' && isNormalizedGeminiQuotaSnapshot(data)) return true;
   if (!isRecord(data)) return false;
 
@@ -19,16 +20,21 @@ export const isAuthCardQuotaCacheDataCompatible = (
 
   switch (provider) {
     case 'antigravity':
-      return Array.isArray(data.groups) && data.groups.every((group) => (
-        isRecord(group) && Array.isArray(group.buckets)
-      ));
+      return (
+        Array.isArray(data.groups) &&
+        data.groups.every((group) => isRecord(group) && Array.isArray(group.buckets))
+      );
     case 'claude':
     case 'codex':
+      return Array.isArray(data.windows);
+    case 'devin':
       return Array.isArray(data.windows);
     case 'gemini-cli':
       return Array.isArray(data.buckets);
     case 'kimi':
       return Array.isArray(data.rows);
+    case 'meta':
+      return isMetaQuotaData(data.data);
     case 'xai':
       return isRecord(data.billing);
     default:
@@ -109,8 +115,7 @@ export const normalizePersistedQuotaState = (
       label: String(item.label ?? item.id ?? ''),
       remainingFraction:
         typeof item.remaining_fraction === 'number' ? item.remaining_fraction : null,
-      remainingAmount:
-        typeof item.remaining_amount === 'number' ? item.remaining_amount : null,
+      remainingAmount: typeof item.remaining_amount === 'number' ? item.remaining_amount : null,
       resetTime: typeof item.reset_at === 'string' ? item.reset_at : undefined,
       tokenType:
         isRecord(item.metadata) && typeof item.metadata.token_type === 'string'

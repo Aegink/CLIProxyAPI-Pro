@@ -132,16 +132,18 @@ The embedded service stores quota snapshots in SQLite for these providers:
 - Antigravity
 - Claude
 - Codex
+- Devin
 - Gemini CLI
 - Kimi
+- Meta
 - xAI
 
 The management UI reads and writes this cache through `/usage/quota-cache`, so quota cards can be restored after page refreshes, browser changes, and backend restarts.
 
 ### QuotaProvider plugin protocol
 
-The patch layer adds an optional `QuotaProvider` capability to the upstream plugin SDK/ABI and
-exposes `POST /v0/management/quota/fetch`. The host owns callback lifecycle, normalized snapshots,
+The patch layer reuses the upstream plugin SDK/ABI `QuotaProvider` capability and callback lifecycle.
+`POST /v0/management/quota/fetch` and `POST /v8/management/credentials/quota/fetch` share Pro normalized snapshots,
 SQLite persistence, and last-known-good plan retention. The current Gemini CLI plugin needs no
 changes: Core adapts its existing `Executor.HttpRequest`; a future native implementation takes
 priority automatically. See [QUOTA_PROVIDER.md](QUOTA_PROVIDER.md) for the schema and compatibility

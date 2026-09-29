@@ -75,8 +75,10 @@ Supported quota providers:
 - Antigravity
 - Claude
 - Codex
+- Devin
 - Gemini CLI
 - Kimi
+- Meta
 - xAI
 
 Quota cards also show cache timestamps and support single-card refresh when the feature flags in `src/pro/modules/quota/features.ts` are enabled.

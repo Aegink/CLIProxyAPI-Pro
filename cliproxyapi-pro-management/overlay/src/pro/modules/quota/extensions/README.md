@@ -2,7 +2,9 @@
 
 Quota runtime state is persisted by the backend embedded-usage SQLite store. The browser Zustand store is only an in-memory view of that state.
 
-Supported provider maps are Antigravity, Claude, Codex, Gemini CLI, Kimi, and xAI.
+Supported provider maps follow the upstream quota registry: Antigravity, Claude, Codex, Devin,
+Gemini CLI, Kimi, Meta, and xAI. The metadata bridge is checked against the upstream quota store
+types so a provider cannot be registered without a matching map and setter.
 
 ## Flow
 
@@ -19,5 +21,10 @@ The API adapter intentionally exposes only list, stats, and write operations use
 Account inspection writes directly to the same SQLite cache. Authentication JSON files are not used as a quota-cache store.
 
 For Gemini CLI, normalized Core QuotaProvider snapshots are authoritative. The middleware hydrates those snapshots into the UI shape and does not mirror the same normalized snapshot back as a second legacy cache entry.
+
+Devin and Meta reuse their upstream normalized UI state contracts; credential-bearing provider
+responses are already discarded by the upstream fetch adapters before the store is updated. Their
+cache rows are not account-policy snapshots; backend policy normalization remains a separate
+capability contract.
 
 The cache is included in the usage JSONL export/import format. Imported older revisions do not overwrite newer records.

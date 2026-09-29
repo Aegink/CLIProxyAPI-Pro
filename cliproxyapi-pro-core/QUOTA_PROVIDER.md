@@ -1,8 +1,8 @@
 # QuotaProvider plugin protocol
 
-`QuotaProvider` is an optional schema-v1 plugin capability. It lets a provider plugin fetch
-provider-specific quota and plan data while the host owns lifecycle, normalization, persistence,
-and management delivery.
+`QuotaProvider` is an upstream optional plugin capability. Pro reuses native host dispatch,
+panic isolation and transport lifecycle, and adds normalized snapshots, persistence,
+last-known-good plans and legacy Gemini CLI compatibility.
 
 ## Capability and methods
 
@@ -61,7 +61,10 @@ as stale instead of being erased. Tier IDs are normalized as follows: `free-tier
 
 ## Management and persistence
 
-`POST /v0/management/quota/fetch` accepts `{ "auth_index": "..." }`. The host resolves the auth,
+`POST /v0/management/quota/fetch` and `POST /v8/management/credentials/quota/fetch`
+share one handler and accept `{ "auth_index": "..." }`. Explicit `plugin_id` or a different
+`provider` selection never falls back to the credential's local declarative probe.
+The host resolves the auth,
 loads its previous snapshot from SQLite, invokes the matching plugin, applies any auth refresh,
 persists the normalized snapshot, and returns it. The browser is a reader of this canonical record.
 
