@@ -67,6 +67,7 @@ func (h *Handler) FetchProPluginQuota(c *gin.Context) {
 		"plugin_id":          result.PluginID,
 		"snapshot":           result.Snapshot,
 		"subscription":       result.Response.Subscription,
+		"summary":            result.Response.Summary,
 		"groups":             result.Response.Groups,
 		"serverTimeOffsetMs": result.Response.ServerTimeOffsetMs,
 	})

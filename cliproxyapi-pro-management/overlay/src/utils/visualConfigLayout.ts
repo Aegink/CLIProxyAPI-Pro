@@ -1,4 +1,4 @@
-import { isMap, isNode, parseDocument, visit } from 'yaml';
+import { isMap, isNode, isScalar, parseDocument, visit } from 'yaml';
 import type { Node } from 'yaml';
 
 type Document = ReturnType<typeof parseDocument>;
@@ -153,6 +153,22 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function setPath(doc: Document, path: Path, value: unknown): void {
+  for (let length = 1; length < path.length; length++) {
+    const parentPath = path.slice(0, length);
+    const parent = doc.getIn(parentPath, true);
+    // Null sections mean defaults; materialize them only when a child changes.
+    if (isScalar(parent) && parent.value === null) {
+      const map = doc.createNode({});
+      map.comment = parent.comment;
+      map.commentBefore = parent.commentBefore;
+      map.spaceBefore = parent.spaceBefore;
+      doc.setIn(parentPath, map);
+    }
+  }
+  doc.setIn(path, value);
+}
+
 // Reconcile changed leaves only. Presence selects precedence, including false,
 // zero and empty values. Existing legacy leaves retain their scope, especially
 // provider defaults which apply to both OAuth and API-key credentials in Core.
@@ -196,7 +212,7 @@ export function editVisualConfigLayout(yaml: string) {
           ) {
             // Empty OAuth lists retain their scope and the separate shared legacy
             // value; deleting them would reactivate or erase the shared setting.
-            source.setIn(destination, source.createNode([]));
+            setPath(source, destination, source.createNode([]));
           } else {
             deletePath(source, destination);
           }
@@ -205,7 +221,7 @@ export function editVisualConfigLayout(yaml: string) {
         } else {
           // yaml's setIn may store a raw JS scalar/array for a newly inserted key.
           const value = doc.getIn(path, true);
-          source.setIn(destination, isNode(value) ? value.clone() : source.createNode(value));
+          setPath(source, destination, isNode(value) ? value.clone() : source.createNode(value));
         }
       };
       reconcile([], before, doc.toJS());

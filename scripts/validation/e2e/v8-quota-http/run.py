@@ -33,11 +33,22 @@ def verify(request):
 
     index = state["auth_index"]
     probe = state["probe_index"]
+    summary_probe = state["summary_probe_index"]
     routes = ["/v0/management/quota/fetch", "/v8/management/credentials/quota/fetch"]
+    summary_failures = []
     for iteration, route in enumerate(routes, 1):
         code, body = request(route, {"auth_index": index})
         assert code == 200, (code, body)
         assert body["snapshot"]["plan"]["id"] == f"tier-{iteration}", body
+        expected_summary = [{
+            "key": "credits_used", "label": "Credits used",
+            "value": iteration * 100, "unit": "credits", "format": "number",
+        }]
+        if body.get("summary") != expected_summary:
+            summary_failures.append({
+                "route": route, "kind": "native", "expected": expected_summary,
+                "actual": body.get("summary"),
+            })
         assert "auth_update" not in body
         _, state = request("/fixture/state")
         assert state["auth"]["token"] == f"updated-{iteration}", state
@@ -60,6 +71,21 @@ def verify(request):
         code, body = request(route, {"auth_index": probe})
         assert code == 200 and len(body["snapshot"]["items"]) == 1, (code, body)
         assert request("/fixture/state")[1]["probe"]["token"] == "original"
+
+    declarative_summary = [{
+        "key": "balance", "label": "Balance", "value": 42.5,
+        "format": "currency", "currency": "USD",
+    }]
+    for route in routes:
+        code, body = request(route, {"auth_index": summary_probe})
+        assert code == 200, (code, body)
+        assert body["snapshot"]["items"] == [], body
+        if body.get("summary") != declarative_summary:
+            summary_failures.append({
+                "route": route, "kind": "declarative", "expected": declarative_summary,
+                "actual": body.get("summary"),
+            })
+        assert request("/fixture/state")[1]["summary_probe"]["token"] == "original"
 
     for selector in (
         {"provider": "fixture-plugin"},
@@ -85,6 +111,7 @@ def verify(request):
     after = request("/fixture/state")[1]
     assert snapshots(before) == snapshots(after)
     assert before["auth"] == after["auth"]
+    assert not summary_failures, summary_failures
 
 
 def main():

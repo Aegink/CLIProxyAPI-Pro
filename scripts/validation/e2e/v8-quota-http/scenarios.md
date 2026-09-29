@@ -2,11 +2,11 @@
 
 Run a separate Go process using the real API server, auth manager, plugin host and SQLite service. An in-process fixture quota provider is the only mocked external dependency. Python drives actual loopback HTTP and saves full local-only responses plus binary hash in receipt.json.
 
-1. v8 fetch returns only native fields and fails to persist; v0 and v8 must both return normalized snapshots, update auth metadata, persist SQLite, and supply Previous on the next fetch.
+1. v8 fetch returns only a subset of native fields and fails to persist; v0 and v8 must both return normalized snapshots plus the provider's native `summary`, update auth metadata, persist SQLite, and supply Previous on the next fetch.
 2. An explicit missing plugin falls through to declarative quota and incorrectly succeeds; both routes must reject it without changing the cache or auth.
 3. Provider-ID and plugin-ID selectors must retain credential identity, Previous, AuthProvider and AuthUpdate. Provider errors preserve the last successful snapshot.
 4. A plugin unloaded and reinstalled with the same ID/path/version during a blocked quota call must not commit a late snapshot or AuthUpdate.
-5. Declarative fallback remains available without an explicit selector, normalizes native groups and persists; payload AuthUpdate never mutates auth.
+5. Declarative fallback remains available without an explicit selector, normalizes native groups and persists; payload AuthUpdate never mutates auth. A summary-only declarative response must preserve `summary` on both routes while the existing snapshot schema remains an empty normalized `items` list.
 
 Policy refresh stays in the one shared production persist function. Reset routes and source/revision protection semantics are excluded. Legacy adapter behavior remains covered by the existing pre-existing host tests; this fixture does not emulate Gemini upstream.
 

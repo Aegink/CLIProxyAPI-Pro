@@ -23,6 +23,10 @@ Keep before/after YAML, HTTP status/body, browser screenshot, and JSON assertion
 7. Legacy-only documents remain editable without unsolicited layout migration.
 8. A no-op save changes bytes or materializes defaults. A repeated save changes more
    than the first save. No-op must be byte-identical; reload must show saved values.
+9. A valid null section (`routing: null` in v8; `tls`, `plugins`, or `routing` in
+   legacy YAML) prevents nested writes and silently discards unrelated edits.
+   Keep null byte-identical on no-op, materialize a mapping when edited, retain
+   the simultaneous debug edit, and verify a reload remains stable.
 
 Harness: copy this directory into a clean patched Management checkout's `e2e/`.
 Start its Vite dev server, open `/e2e/v8-visual-config/`, and use `window.visualV8`:

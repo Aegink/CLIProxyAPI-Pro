@@ -49,7 +49,7 @@ func (p *provider) FetchQuota(ctx context.Context, r pluginapi.QuotaFetchRequest
 	if n > 1 && r.Previous == nil {
 		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("lost previous snapshot")
 	}
-	return pluginapi.QuotaFetchResponse{Subscription: &pluginapi.QuotaSubscription{Plan: "pro", TierID: fmt.Sprintf("tier-%d", n)}, Groups: []pluginapi.QuotaGroup{{Buckets: []pluginapi.QuotaBucket{{Window: "daily", RemainingFraction: 0.75}}}}, AuthUpdate: pluginapi.AuthData{Metadata: map[string]any{"token": fmt.Sprintf("updated-%d", n)}}}, nil
+	return pluginapi.QuotaFetchResponse{Subscription: &pluginapi.QuotaSubscription{Plan: "pro", TierID: fmt.Sprintf("tier-%d", n)}, Summary: []pluginapi.QuotaMetric{{Key: "credits_used", Label: "Credits used", Value: float64(n) * 100, Unit: "credits", Format: "number"}}, Groups: []pluginapi.QuotaGroup{{Buckets: []pluginapi.QuotaBucket{{Window: "daily", RemainingFraction: 0.75}}}}, AuthUpdate: pluginapi.AuthData{Metadata: map[string]any{"token": fmt.Sprintf("updated-%d", n)}}}, nil
 }
 func main() {
 	root := os.Args[1]
@@ -73,6 +73,11 @@ func main() {
 	if _, err = manager.Register(ctx, probe); err != nil {
 		panic(err)
 	}
+	summaryProbe := &coreauth.Auth{ID: "summary-probe-auth", FileName: "summary-probe.json", Provider: "summary-probe-fixture", Metadata: map[string]any{"token": "original", "quota_probe": map[string]any{"url": fmt.Sprintf("http://127.0.0.1:%d/fixture/summary-probe", port)}}}
+	summaryProbe.EnsureIndex()
+	if _, err = manager.Register(ctx, summaryProbe); err != nil {
+		panic(err)
+	}
 	host := pluginhost.New()
 	p := &provider{release: make(chan struct{})}
 	host.RegisterPluginForTest("fixture-plugin", pluginapi.Plugin{Capabilities: pluginapi.Capabilities{QuotaProvider: p}})
@@ -87,11 +92,15 @@ func main() {
 		e.GET("/fixture/state", func(c *gin.Context) {
 			a, _ := manager.GetByID(auth.ID)
 			b, _ := manager.GetByID(probe.ID)
+			d, _ := manager.GetByID(summaryProbe.ID)
 			entries, err := embeddedusage.GetQuotaCache(ctx, "", "")
-			c.JSON(200, gin.H{"auth_index": auth.Index, "probe_index": probe.Index, "auth": a.Metadata, "probe": b.Metadata, "entries": entries, "cache_error": fmt.Sprint(err), "entered": p.entered.Load()})
+			c.JSON(200, gin.H{"auth_index": auth.Index, "probe_index": probe.Index, "summary_probe_index": summaryProbe.Index, "auth": a.Metadata, "probe": b.Metadata, "summary_probe": d.Metadata, "entries": entries, "cache_error": fmt.Sprint(err), "entered": p.entered.Load()})
 		})
 		e.GET("/fixture/probe", func(c *gin.Context) {
 			c.Data(200, "application/json", []byte(`{"groups":[{"buckets":[{"window":"daily","remainingFraction":0.5}]}],"auth_update":{"Metadata":{"token":"untrusted"}}}`))
+		})
+		e.GET("/fixture/summary-probe", func(c *gin.Context) {
+			c.Data(200, "application/json", []byte(`{"summary":[{"key":"balance","label":"Balance","value":42.5,"format":"currency","currency":"USD"}]}`))
 		})
 		e.POST("/fixture/unload", func(c *gin.Context) {
 			host.ShutdownAll()

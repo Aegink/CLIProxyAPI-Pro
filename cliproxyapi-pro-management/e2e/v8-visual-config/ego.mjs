@@ -227,6 +227,24 @@ payload:
     'clearing OAuth override preserves shared legacy scope');
   receipt.scenarios.push({ name: 'oauth-clear-scope', after: oauthCleared.yaml });
 
+  for (const [name, yaml, patch, path, expected] of [
+    ['v8-null-routing', 'config-version: 8\nrouting: null\n', { requestRetry: '3' }, ['routing', 'retry', 'request-retry'], 3],
+    ['legacy-null-tls', 'tls: null\n', { tlsEnable: true }, ['tls', 'enable'], true],
+    ['legacy-null-plugins', 'plugins: null\n', { pluginsEnabled: true }, ['plugins', 'enabled'], true],
+    ['legacy-null-routing', 'routing: null\n', { routingStrategy: 'fill-first' }, ['routing', 'strategy'], 'fill-first'],
+  ]) {
+    await load(yaml);
+    ensure((await save({})).yaml === yaml, `${name}: no-op preserves null`);
+    const updated = await save({ ...patch, debug: true });
+    ensure(path.reduce((value, key) => value?.[key], updated.parsed) === expected,
+      `${name}: nested edit survives null parent`);
+    ensure((updated.parsed.observability?.logs?.debug ?? updated.parsed.debug) === true,
+      `${name}: unrelated edit is not discarded`);
+    await load(updated.yaml);
+    ensure((await save({})).yaml === updated.yaml, `${name}: reload is stable`);
+    receipt.scenarios.push({ name, before: yaml, after: updated.yaml });
+  }
+
   if (config.coreUrl) {
     ensure(
       ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(config.coreUrl).hostname),
