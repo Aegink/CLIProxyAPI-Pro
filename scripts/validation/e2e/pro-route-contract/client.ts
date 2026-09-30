@@ -42,6 +42,7 @@ try {
   const { apiClient } = await load('services/api/client.ts');
   const { configApi } = await load('services/api/config.ts');
   const { authFilesApi } = await load('services/api/authFiles.ts');
+  const { authFileConnectionApi } = await load('pro/authFiles/connectionTestApi.ts');
   const { sqliteQuotaCache } = await load('pro/modules/quota/extensions/sqliteQuotaCache.ts');
   const { dataManagementApi } = await load('pro/modules/dataManagement/dataManagement.ts');
   const { proxyPoolApi } = await load('pro/modules/proxyPool/proxyPool.ts');
@@ -59,7 +60,7 @@ try {
 
   // Reject invalid input before any provider request. This is a Pro operation
   // despite living in the upstream authFilesApi domain module.
-  await assert.rejects(authFilesApi.testConnection({ name: '', model: '' }), (error: unknown) => {
+  await assert.rejects(authFileConnectionApi.testConnection({ name: '', model: '' }), (error: unknown) => {
     assert.equal(
       (error as { status?: number }).status,
       400,

@@ -16,8 +16,6 @@ src/features/dashboard/hooks/useDashboardOverview.ts
 src/features/quota/QuotaPage.tsx
 src/features/quota/components/QuotaCard.tsx
 src/features/quota/constants.ts
-src/features/quota/hooks/useQuotaActions.ts
-src/features/quota/hooks/useQuotaBatchLoader.ts
 src/features/quota/logic.ts
 src/features/quota/providers/index.ts
 src/features/quota/providers/types.ts
@@ -27,7 +25,6 @@ src/pages/LoginPage.tsx
 src/pages/SystemPage.tsx
 src/router/MainRoutes.tsx
 src/services/api/apiCall.ts
-src/services/api/authFiles.ts
 src/services/api/client.ts
 src/stores/useAuthStore.ts
 src/stores/useNotificationStore.ts

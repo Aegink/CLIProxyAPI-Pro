@@ -46,9 +46,10 @@ upstream `visualConfigV8`, `visualConfigRebase`, `visualConfigPayloadAst`, and
 `visualConfigConcurrency` tests validate the native behavior. In particular, do
 not promise legacy fallback or byte-identical no-op serialization.
 
-Keep Pro credential cache/model-query extensions on upstream `/credentials`
-endpoints, and attach cancellation to its existing connection revision increment
-without replacing its ABA guard. Inspection WebSocket URLs accept a bare base or
+Keep native credential operations and normalization on upstream `/credentials`
+endpoints. Pro connection tests and identity-aware connection-test model lookups
+live in `pro/authFiles/connectionTestApi.ts`. Attach cancellation to the native
+connection revision increment without replacing its ABA guard. Inspection WebSocket URLs accept a bare base or
 an explicit v0/v8 prefix and use the Pro v0 route described below.
 
 The cooldown hint test fixture compares HTML-escaped translated text, preserving
@@ -78,3 +79,11 @@ Core v8.0.4 上的纯新增声明保留在原 Go 包的 Pro 文件中：插件�
 Management v1.25.0 的 `maskSensitiveText` 进入 `pro/shared`，继续复用原生 `maskApiKey`，脱敏规则不变；`utils/format.ts` 恢复为原生文件，原生修改文件数由 41 降至 40。登出复用上游已有连接清空，保留 Pro 请求取消和缓存清理；移除未使用的旧 Gemini payload 类型，保留实际配额状态类型。此前 cooldown 成功后刷新凭据缓存的修复继续保留。
 
 本批仅调整声明归属和清理冗余。凭据 TTL 缓存、Pro API 提取、配额时间戳和共享 transport 进一步收敛需要单独的行为验证，不在本批扩大改动。
+
+### 第二批补丁收敛
+
+Management 的凭据列表使用原生无 TTL 缓存实现；删除全局 2 秒缓存和七类写操作失效包装，`services/api/authFiles.ts` 恢复上游原文。成功 cooldown reset 后的读取直接请求当前凭据，不再依赖第一批失效修复。移除缓存解决热缓存跨服务器复用和外部写入后刷新仍返回旧状态的问题；代价是重复读取恢复到每次一次 HTTP 请求，局部测试不代表生产网络延迟。
+
+连接测试 DTO 和 API 位于 `pro/authFiles/connectionTestApi.ts`。测试执行仍经共享认证 transport 使用 Pro v0 路径；模型查询保留原生 v8 凭据路径、`auth_index` 身份和 `purpose=connection-test` 静态回退。原生普通模型查询、上传、导出、刷新和批量删除继续直接复用上游实现。
+
+配额成功时间戳统一在已有 adapter registry 装饰 `buildSuccessState`；复用 `withQuotaCachedAt`，已有数字时间戳保留，未提供时才记录当前时间。`useQuotaActions.ts` 和 `useQuotaBatchLoader.ts` 恢复上游原文；单卡、批量、Devin 自动读取及账号卡片使用同一入口，不装饰 loading/error 或 SQLite hydration，也不改变 store、generation/revision 和连接隔离。原生修改文件数由 40 降至 37，Core 保持第一批的 97。

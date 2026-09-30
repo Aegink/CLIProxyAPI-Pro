@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import type { TFunction } from 'i18next';
 import { apiClient } from '../src/services/api/client';
 import { authFilesApi } from '../src/services/api/authFiles';
+import { authFileConnectionApi } from '../src/pro/authFiles/connectionTestApi';
 import { sqliteQuotaCache } from '../src/pro/modules/quota/extensions/sqliteQuotaCache';
 import { GEMINI_CLI_CONFIG } from '../src/pro/modules/quota/extensions/geminiCliQuotaConfig';
 import { dataManagementApi } from '../src/pro/modules/dataManagement/dataManagement';
@@ -52,7 +53,7 @@ test('real HTTP requests keep native routes v8 and all Pro service domains v0', 
       { name: 'gemini.json', authIndex: 'http-test', type: 'gemini' },
       ((key: string) => key) as TFunction
     );
-    await authFilesApi.testConnection({ name: 'http-test.json', model: 'test-model' });
+    await authFileConnectionApi.testConnection({ name: 'http-test.json', model: 'test-model' });
 
     expect(paths).toContain('GET /cpa/v8/management/config');
     expect(paths).toContain('GET /cpa/v8/management/credentials');

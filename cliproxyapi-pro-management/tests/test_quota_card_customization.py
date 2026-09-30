@@ -85,13 +85,16 @@ class QuotaCardCustomizationTest(unittest.TestCase):
             self.assertEqual(quota_source, quota_path.read_text())
             self.assertEqual(auth_source, auth_path.read_text())
 
-    def test_timestamps_all_success_states_at_shared_commit_boundaries(self) -> None:
+    def test_timestamps_success_states_at_adapter_registry_without_changing_hooks(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             target = Path(temp_dir)
             hooks_dir = target / 'src/features/quota/hooks'
             hooks_dir.mkdir(parents=True)
             actions_path = hooks_dir / 'useQuotaActions.ts'
             batch_path = hooks_dir / 'useQuotaBatchLoader.ts'
+            providers_path = target / 'src/features/quota/providers/index.ts'
+            providers_path.parent.mkdir(parents=True)
+            providers_path.write_text("import { useQuotaStore } from '@/stores';\n\nexport const QUOTA_ADAPTERS = {};\n\nexport type QuotaMapUpdater = (\n")
             actions_path.write_text(QUOTA_ACTIONS_SOURCE)
             batch_path.write_text(QUOTA_BATCH_SOURCE)
 
@@ -100,17 +103,19 @@ class QuotaCardCustomizationTest(unittest.TestCase):
 
             actions = actions_path.read_text()
             batch = batch_path.read_text()
-            self.assertEqual(2, actions.count('withQuotaCachedAt(adapter.buildSuccessState(data))'))
-            self.assertIn(
-                'withQuotaCachedAt(adapter.buildSuccessState(result.data))',
-                batch,
-            )
-            self.assertNotIn("providers/antigravity/data", actions + batch)
+            providers = providers_path.read_text()
+            self.assertEqual(QUOTA_ACTIONS_SOURCE, actions)
+            self.assertEqual(QUOTA_BATCH_SOURCE, batch)
+            self.assertIn("import { withQuotaCachedAt } from '@/pro/shared/quotaState';", providers)
+            self.assertIn('for (const adapter of Object.values(QUOTA_ADAPTERS))', providers)
+            self.assertIn('adapter.buildSuccessState = (data) => withQuotaCachedAt(buildSuccessState(data));', providers)
+            self.assertNotIn("providers/antigravity/data", providers)
 
             CUSTOMIZATIONS.patch_quota_success_timestamps(target)
             CUSTOMIZATIONS.flush_writes()
             self.assertEqual(actions, actions_path.read_text())
             self.assertEqual(batch, batch_path.read_text())
+            self.assertEqual(providers, providers_path.read_text())
 
 
 if __name__ == '__main__':

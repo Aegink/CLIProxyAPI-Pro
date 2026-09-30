@@ -4,5 +4,5 @@ export type TimestampedQuotaState = {
 
 export const withQuotaCachedAt = <T extends object>(
   state: T,
-  cachedAt = Date.now()
+  cachedAt = 'cachedAt' in state && typeof state.cachedAt === 'number' ? state.cachedAt : Date.now()
 ): T & TimestampedQuotaState => ({ ...state, cachedAt });

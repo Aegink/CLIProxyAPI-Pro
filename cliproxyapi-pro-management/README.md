@@ -153,11 +153,12 @@ UI 会在主布局中启动 `QuotaPersistenceBootstrap`，把已保存的配额�
 - 侧边栏导航文案和图标。
 - 从 `monitoring-locales.json` 合并的多语言文案。
 - monitoring 使用的 `usageStatisticsEnabled` 配置类型；账号巡检设置仅通过 schedule API 管理。
-- `authFilesApi.patchFile`、`setStatusWithFallback` helper。
 - `accountInspection` service export。
 - `Select` 的 `triggerClassName` 和 `dropdownClassName` props。
 - quota state 类型和 success state 中的 `cachedAt` 字段。
 - 管理中心版本卡片的“检查更新”按钮；调用后端 `POST /management-panel/check-update`，仅在 latest release 资源哈希变化时替换面板，并在实际更新后重新加载页面。
+
+连接测试专用 DTO、测试请求和带账号身份的模型查询位于 `overlay/src/pro/authFiles/connectionTestApi.ts`；原生凭据 API 不再注入 TTL 缓存。
 
 脱敏工具位于 `overlay/src/pro/shared/maskSensitiveText.ts`，复用原生 `maskApiKey`；不再修改 upstream 的 `utils/format.ts`。
 

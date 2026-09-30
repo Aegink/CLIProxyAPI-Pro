@@ -1470,67 +1470,7 @@ def patch_account_usage_feature(target: Path) -> None:
     )
 
 def patch_auth_file_connection_test(target: Path) -> None:
-    api_path = target / 'src/services/api/authFiles.ts'
     card_path = target / 'src/features/authFiles/components/AuthFileCard.tsx'
-
-    insert_once(
-        api_path,
-        "import { apiClient } from './client';\n",
-        "import { apiClient } from './client';\n"
-        "import { proApiClient } from '@/pro/shared/proManagementTransport';\n",
-        "import { proApiClient } from '@/pro/shared/proManagementTransport';",
-    )
-
-    insert_once(
-        api_path,
-        "type AuthFileStatusResponse = { status: string; disabled: boolean };\n",
-        "type AuthFileStatusResponse = { status: string; disabled: boolean };\n"
-        "export type AuthFileConnectionTestResponse = {\n"
-        "  success: boolean;\n"
-        "  model?: string;\n"
-        "  latency_ms: number;\n"
-        "  output?: string;\n"
-        "  error?: string;\n"
-        "  error_code?: string;\n"
-        "  http_status?: number;\n"
-        "};\n"
-        "export type AuthFileConnectionTestRequest = {\n"
-        "  name: string;\n"
-        "  auth_index?: string;\n"
-        "  model: string;\n"
-        "};\n",
-        'export type AuthFileConnectionTestResponse',
-    )
-    insert_once(
-        api_path,
-        "  uploadFiles: async (files: File[]): Promise<AuthFileBatchUploadResult> => {\n",
-        "  testConnection: (payload: AuthFileConnectionTestRequest, signal?: AbortSignal) =>\n"
-        "    proApiClient.post<AuthFileConnectionTestResponse>('/auth-files/test', payload, { signal }),\n\n"
-        "  uploadFiles: async (files: File[]): Promise<AuthFileBatchUploadResult> => {\n",
-        "testConnection: (payload: AuthFileConnectionTestRequest, signal?: AbortSignal)",
-    )
-
-    replace_once(
-        api_path,
-        "  async getModelsForAuthFile(\n"
-        "    name: string\n"
-        "  ): Promise<{ id: string; display_name?: string; type?: string; owned_by?: string }[]> {\n"
-        "    const data = await apiClient.get<Record<string, unknown>>(\n"
-        "      `/credentials/models?name=${encodeURIComponent(name)}`\n"
-        "    );\n",
-        "  async getModelsForAuthFile(\n"
-        "    name: string,\n"
-        "    authIndex?: string,\n"
-        "    purpose?: 'connection-test'\n"
-        "  ): Promise<{ id: string; display_name?: string; type?: string; owned_by?: string }[]> {\n"
-        "    const normalizedAuthIndex = authIndex?.trim();\n"
-        "    const authIndexQuery = normalizedAuthIndex\n"
-        "      ? `&auth_index=${encodeURIComponent(normalizedAuthIndex)}`\n"
-        "      : '';\n"
-        "    const data = await apiClient.get<Record<string, unknown>>(\n"
-        "      `/credentials/models?name=${encodeURIComponent(name)}${authIndexQuery}${purpose === 'connection-test' ? '&purpose=connection-test' : ''}`\n"
-        "    );\n",
-    )
 
     insert_once(
         card_path,
@@ -1624,70 +1564,6 @@ def patch_supporting_api_and_types(target: Path) -> None:
         auth_file_constants_path,
         "export const getAuthFileStatusMessage = (file: AuthFileItem): string => {\n  const raw = file['status_message'] ?? file.statusMessage;\n  if (typeof raw === 'string') return raw.trim();\n  if (raw == null) return '';\n  return String(raw).trim();\n};\n",
         "const normalizeAuthFileMessageValue = (value: unknown): string => {\n  if (typeof value === 'string') return value.trim();\n  if (value == null) return '';\n  return String(value).trim();\n};\n\nconst getAuthFileLastErrorMessage = (file: AuthFileItem): string => {\n  const raw = file['last_error'] ?? file.lastError;\n  if (!raw || typeof raw !== 'object') return '';\n  return normalizeAuthFileMessageValue((raw as { message?: unknown }).message);\n};\n\nexport const getAuthFileStatusMessage = (file: AuthFileItem): string => {\n  const statusMessage = normalizeAuthFileMessageValue(file['status_message'] ?? file.statusMessage);\n  return statusMessage || getAuthFileLastErrorMessage(file);\n};\n",
-    )
-
-    auth_files_path = target / 'src/services/api/authFiles.ts'
-    insert_once(
-        auth_files_path,
-        "export const authFilesApi = {\n",
-        "const AUTH_FILES_LIST_CACHE_TTL_MS = 2000;\nlet authFilesListCache: { expiresAt: number; response: AuthFilesResponse } | null = null;\nlet authFilesListRequest: Promise<AuthFilesResponse> | null = null;\nlet authFilesListVersion = 0;\n\nconst cloneAuthFilesResponse = (response: AuthFilesResponse): AuthFilesResponse => ({\n  ...response,\n  files: Array.isArray(response.files) ? [...response.files] : [],\n});\n\nconst invalidateAuthFilesListCache = () => {\n  authFilesListVersion += 1;\n  authFilesListCache = null;\n  authFilesListRequest = null;\n};\n\nconst fetchAuthFilesList = async (lookup?: AuthFileLookup): Promise<AuthFilesResponse> => {\n  if (lookup) {\n    return normalizeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/credentials', {\n      params: { name: lookup.name, auth_index: lookup.authIndex },\n    }));\n  }\n  const now = Date.now();\n  if (authFilesListCache && authFilesListCache.expiresAt > now) {\n    return cloneAuthFilesResponse(authFilesListCache.response);\n  }\n  if (!authFilesListRequest) {\n    const requestVersion = authFilesListVersion;\n    authFilesListRequest = apiClient.get<AuthFilesResponse>('/credentials', undefined)\n      .then(normalizeAuthFilesResponse)\n      .then((response) => {\n        if (requestVersion === authFilesListVersion) {\n          authFilesListCache = {\n            expiresAt: Date.now() + AUTH_FILES_LIST_CACHE_TTL_MS,\n            response: cloneAuthFilesResponse(response),\n          };\n        }\n        return response;\n      })\n      .finally(() => {\n        if (requestVersion === authFilesListVersion) {\n          authFilesListRequest = null;\n        }\n      });\n  }\n  return cloneAuthFilesResponse(await authFilesListRequest);\n};\n\nexport const authFilesApi = {\n",
-        "AUTH_FILES_LIST_CACHE_TTL_MS",
-    )
-    list_replacement = (
-        "  list: fetchAuthFilesList,\n\n  setStatus: async (name: string, disabled: boolean) => {\n    const response = await apiClient.patch<AuthFileStatusResponse>('/credentials/status', { name, disabled });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n"
-    )
-    replace_once(
-        auth_files_path,
-        "  list: async (lookup?: AuthFileLookup) =>\n"
-        "    normalizeAuthFilesResponse(\n"
-        "      await apiClient.get<AuthFilesResponse>(\n"
-        "        '/credentials',\n"
-        "        lookup ? { params: { name: lookup.name, auth_index: lookup.authIndex } } : undefined\n"
-        "      )\n"
-        "    ),\n\n"
-        "  setStatus: (name: string, disabled: boolean) =>\n"
-        "    apiClient.patch<AuthFileStatusResponse>('/credentials/status', { name, disabled }),\n\n",
-        list_replacement,
-    )
-    replace_once(
-        auth_files_path,
-        "  patchFields: (name: string, fields: AuthFileFieldsPatch) =>\n    apiClient.patch('/credentials/fields', { name, ...fields }),\n\n",
-        "  patchFields: async (name: string, fields: AuthFileFieldsPatch) => {\n    const response = await apiClient.patch('/credentials/fields', { name, ...fields });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n\n",
-    )
-    replace_once(
-        auth_files_path,
-        "  resetCooldown: (authIndex: string) =>\n"
-        "    apiClient.post<AuthFileCooldownResetResponse>('/routing/cooldown/reset', {\n"
-        "      auth_index: authIndex,\n"
-        "    }),\n",
-        "  resetCooldown: async (authIndex: string) => {\n"
-        "    const response = await apiClient.post<AuthFileCooldownResetResponse>('/routing/cooldown/reset', {\n"
-        "      auth_index: authIndex,\n"
-        "    });\n"
-        "    invalidateAuthFilesListCache();\n"
-        "    return response;\n"
-        "  },\n",
-    )
-    replace_once(
-        auth_files_path,
-        "    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/credentials', formData);\n    return normalizeBatchUploadResponse(payload, requestedNames);\n",
-        "    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/credentials', formData);\n    invalidateAuthFilesListCache();\n    return normalizeBatchUploadResponse(payload, requestedNames);\n",
-    )
-    replace_once(
-        auth_files_path,
-        "    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>('/credentials', {\n      data: { names: requestedNames },\n    });\n    return normalizeBatchDeleteResponse(payload, requestedNames);\n",
-        "    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>('/credentials', {\n      data: { names: requestedNames },\n    });\n    invalidateAuthFilesListCache();\n    return normalizeBatchDeleteResponse(payload, requestedNames);\n",
-    )
-    replace_once(
-        auth_files_path,
-        "  deleteAll: () => apiClient.delete('/credentials', { params: { all: true } }),\n",
-        "  deleteAll: async () => {\n    const response = await apiClient.delete('/credentials', { params: { all: true } });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n",
-    )
-
-    replace_once(
-        auth_files_path,
-        "      ...(authIndex ? { auth_index: authIndex } : {}),\n    });\n",
-        "      ...(authIndex ? { auth_index: authIndex } : {}),\n    });\n    invalidateAuthFilesListCache();\n",
     )
 
     select_path = target / 'src/components/ui/Select.tsx'
@@ -2011,37 +1887,23 @@ def patch_quota_cards_latest(target: Path) -> None:
 
 
 def patch_quota_success_timestamps(target: Path) -> None:
-    actions_path = target / 'src/features/quota/hooks/useQuotaActions.ts'
+    path = target / 'src/features/quota/providers/index.ts'
     insert_once(
-        actions_path,
-        "import { getStatusFromError } from '@/utils/quota';\n",
-        "import { withQuotaCachedAt } from '@/pro/shared/quotaState';\n"
-        "import { getStatusFromError } from '@/utils/quota';\n",
+        path,
+        "import { useQuotaStore } from '@/stores';\n",
+        "import { useQuotaStore } from '@/stores';\n"
+        "import { withQuotaCachedAt } from '@/pro/shared/quotaState';\n",
         "from '@/pro/shared/quotaState'",
     )
-    actions_text = read(actions_path)
-    old_action = 'adapter.buildSuccessState(data)'
-    new_action = 'withQuotaCachedAt(adapter.buildSuccessState(data))'
-    if new_action not in actions_text:
-        if actions_text.count(old_action) != 2:
-            raise RuntimeError(
-                f'Expected two quota success commits in {actions_path}, '
-                f'found {actions_text.count(old_action)}'
-            )
-        write(actions_path, actions_text.replace(old_action, new_action))
-
-    batch_path = target / 'src/features/quota/hooks/useQuotaBatchLoader.ts'
     insert_once(
-        batch_path,
-        "import { getStatusFromError } from '@/utils/quota';\n",
-        "import { withQuotaCachedAt } from '@/pro/shared/quotaState';\n"
-        "import { getStatusFromError } from '@/utils/quota';\n",
-        "from '@/pro/shared/quotaState'",
-    )
-    replace_once(
-        batch_path,
-        'adapter.buildSuccessState(result.data)',
-        'withQuotaCachedAt(adapter.buildSuccessState(result.data))',
+        path,
+        'export type QuotaMapUpdater = (',
+        "for (const adapter of Object.values(QUOTA_ADAPTERS)) {\n"
+        "  const buildSuccessState = adapter.buildSuccessState;\n"
+        "  adapter.buildSuccessState = (data) => withQuotaCachedAt(buildSuccessState(data));\n"
+        "}\n\n"
+        'export type QuotaMapUpdater = (',
+        'for (const adapter of Object.values(QUOTA_ADAPTERS))',
     )
 
 

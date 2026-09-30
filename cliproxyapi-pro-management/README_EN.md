@@ -153,11 +153,12 @@ The page uses:
 - sidebar navigation labels and icon.
 - locale entries from `monitoring-locales.json`.
 - the `usageStatisticsEnabled` config type used by monitoring; account-inspection settings are managed only through the schedule API.
-- `authFilesApi.patchFile` and `setStatusWithFallback` helpers.
 - `accountInspection` service export.
 - `Select` `triggerClassName` and `dropdownClassName` props.
 - `cachedAt` fields for quota state types and success states.
 - a “Check for updates” action on the Management Center version tile; it calls `POST /management-panel/check-update`, replaces the panel only when the latest-release asset hash changes, and reloads only after an actual update.
+
+Connection-test DTOs, requests, and identity-aware model lookup live in `overlay/src/pro/authFiles/connectionTestApi.ts`; the native credential API has no injected TTL cache.
 
 The masking helper lives in `overlay/src/pro/shared/maskSensitiveText.ts` and reuses native `maskApiKey`, without patching upstream `utils/format.ts`.
 

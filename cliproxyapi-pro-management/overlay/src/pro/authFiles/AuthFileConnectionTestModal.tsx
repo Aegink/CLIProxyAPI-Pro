@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Select } from '@/components/ui/Select';
 import { IconCheckCircle2, IconNetwork, IconAlertTriangle } from '@/components/ui/icons';
-import { authFilesApi, type AuthFileConnectionTestResponse } from '@/services/api/authFiles';
+import { authFileConnectionApi, type AuthFileConnectionTestResponse } from './connectionTestApi';
 import type { AuthFileItem } from '@/types';
 import { maskSensitiveText } from '@/pro/shared/maskSensitiveText';
 import { getErrorMessage } from '@/utils/helpers';
@@ -61,8 +61,8 @@ export function AuthFileConnectionTestModal({
     if (!activeFile) return;
 
     setModelsLoading(true);
-    void authFilesApi
-      .getModelsForAuthFile(activeFile.name, normalizeAuthIndex(activeFile.authIndex), 'connection-test')
+    void authFileConnectionApi
+      .getModelsForAuthFile(activeFile.name, normalizeAuthIndex(activeFile.authIndex))
       .then((items) => {
         if (requestSequence.current !== sequence) return;
         const seen = new Set<string>();
@@ -105,7 +105,7 @@ export function AuthFileConnectionTestModal({
     setStatus('running');
     setResult(null);
     try {
-      const response = await authFilesApi.testConnection(
+      const response = await authFileConnectionApi.testConnection(
         {
           name: activeFile.name,
           auth_index: normalizeAuthIndex(activeFile.authIndex),
