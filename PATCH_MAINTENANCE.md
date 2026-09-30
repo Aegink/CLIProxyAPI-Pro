@@ -87,3 +87,11 @@ Management 的凭据列表使用原生无 TTL 缓存实现；删除全局 2 秒�
 连接测试 DTO 和 API 位于 `pro/authFiles/connectionTestApi.ts`。测试执行仍经共享认证 transport 使用 Pro v0 路径；模型查询保留原生 v8 凭据路径、`auth_index` 身份和 `purpose=connection-test` 静态回退。原生普通模型查询、上传、导出、刷新和批量删除继续直接复用上游实现。
 
 配额成功时间戳统一在已有 adapter registry 装饰 `buildSuccessState`；复用 `withQuotaCachedAt`，已有数字时间戳保留，未提供时才记录当前时间。`useQuotaActions.ts` 和 `useQuotaBatchLoader.ts` 恢复上游原文；单卡、批量、Devin 自动读取及账号卡片使用同一入口，不装饰 loading/error 或 SQLite hydration，也不改变 store、generation/revision 和连接隔离。原生修改文件数由 40 降至 37，Core 保持第一批的 97。
+
+### 第三批补丁收敛
+
+Core 的 13 处代理/transport 整函数替换改为局部锚点，仅修改有效代理解析、代际 cache key 和构造接入点。五份同包 Pro 文件承接已有 key 类型和解析一次的薄封装；上游 TLS、HTTP/1.1、超时、压缩、fallback 与连接池主体留在原生文件。独立 transport 收窄后的 119 个声明与第二批基线 AST 一致；随后三个代际同步函数复用 `internal/cache.SyncGeneration`，仍使用各自的原子状态、cache 和 Purge 回调，保持 Load/CAS/Purge 顺序与现有锁语义。
+
+WebSocket 与 WebRTC sideband 共享同包 `realtime_usage_pro.go` 的终态识别、Codex/OpenAI usage fallback、total fallback 和 quota delta 转换。active turn 清空、response/payload event ID、重复事件处理、准入与结算失败处理仍由原 relay 负责；WS 的取消上下文与 sideband 的 `WithoutCancel` 不合并。空 usage 在两条 relay 的既有不同处理也保留。
+
+本批 Core 原生修改文件仍为 97，Management 保持 37。代理部分整函数替换由 13 降至 0，生成器嵌入的替换 Go 文本由 539 降至 260 行；局部替换由 9 增至 36、旧锚点文本由 44 增至 191 行。收益是上游主体可以自然跟随，代价是仍须维护必要局部锚点；不以预设文件数下降替代语义验证。新增七份源码均登记碰撞检查、queue 与 gofmt。退出条件仍是上游提供等价的运行时代理与持久化结算边界。

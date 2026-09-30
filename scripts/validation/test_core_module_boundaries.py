@@ -13,6 +13,21 @@ PRO_IMPORT_PATTERN = re.compile(
 
 
 class CoreModuleBoundaryTests(unittest.TestCase):
+    def test_proxy_transport_patches_preserve_upstream_function_bodies(self):
+        tree = ast.parse((PATCHES / 'apply_upstream_patches.py').read_text(encoding='utf-8'))
+        owners = {'proxy_helpers', 'round_tripper_provider', 'utls_client',
+                  'claude_oauth_transport', 'antigravity_executor', 'pluginhost_http_bridge'}
+        forbidden = []
+        for node in tree.body:
+            if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+                continue
+            call = node.value
+            if (isinstance(call.func, ast.Name) and call.func.id == 'replace_go_function'
+                    and call.args and isinstance(call.args[0], ast.Name)
+                    and call.args[0].id in owners):
+                forbidden.append((call.args[0].id, ast.literal_eval(call.args[1])))
+        self.assertEqual([], forbidden, 'proxy takeover must use local anchors, not copy native transport bodies')
+
     def test_go_formatter_batches_process_invocation(self):
         generator_path = PATCHES / 'apply_upstream_patches.py'
         generator_tree = ast.parse(generator_path.read_text(encoding='utf-8'))

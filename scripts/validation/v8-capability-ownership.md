@@ -1,11 +1,11 @@
 # v8 capability ownership
 
-Reviewed against Core v8.0.4 (`d33f63f8`) and Management v1.24.2 (`4530da2`).
+Reviewed against Core v8.0.4 (`d33f63f8`) and Management v1.25.0 (`b87b9487`).
 The surface manifests list modified upstream files, not all added Pro sources.
 
 | Area | Upstream owns | Pro retains |
 | --- | --- | --- |
-| Configuration | YAML migration, canonical schema validation, effective runtime Config, v0 compatibility | Visual YAML layout boundary; existing-key startup overrides; Pro SQLite migration |
+| Configuration | YAML migration, canonical schema validation, effective runtime Config, v0 compatibility, native v8 visual editing | Existing-key startup overrides; Pro SQLite migration |
 | Usage | Claude nested usage parsing, PublishFailureWithDetail, stream response-model fallback | Speed/pricing metadata, final outcome ordering, independent persistence sink and synchronous policy settlement |
 | Quota | Provider discovery and native plugin dispatch, panic/fuse/HTTP lifecycle | Previous/normalized snapshots, auth-bound context, last-known-good plan, SQLite persistence, legacy adapter, selection and stale-result guards |
 | Management quota | Provider state types and tab order | Persistent card snapshots, including Devin and Meta; these do not automatically add inspection or account-policy support |
@@ -39,6 +39,13 @@ fallback. Process-level stream receipts verify the persisted outcome separately.
   new v8 route; reset operations do not acquire inspection-recovery semantics.
 - Dynamic-plugin migration is not a prerequisite for this change. Static Pro
   features remain available in no-plugin builds.
+- Management uses native v8 visual editing and credential APIs. Pro connection
+  tests retain a small feature API, and authenticated Pro v0 requests continue
+  to share the native client; changing URL versions is not a convergence goal.
+- Runtime proxy patches alter only resolution, cache identity and construction
+  boundaries. The three generation owners share the existing CAS/Purge algorithm,
+  while cache locks and callbacks remain local. Realtime relays share usage
+  decoding, retaining their distinct event identity and settlement lifecycle.
 
 ## Validation
 

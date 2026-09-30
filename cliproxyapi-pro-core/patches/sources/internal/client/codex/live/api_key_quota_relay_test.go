@@ -2,9 +2,14 @@ package live
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -240,5 +245,198 @@ func TestSidebandQuotaRelaySettlesFrozenBootstrapAdmission(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("sideband usage was not settled")
+	}
+}
+
+// TestRealtimeQuotaRelayCompatibilityReceipt uses real HTTP/WebSocket peers to
+// freeze the distinct WS and sideband settlement contracts before deduplication.
+func TestRealtimeQuotaRelayCompatibilityReceipt(t *testing.T) {
+	type settlement struct {
+		EventID  string                       `json:"eventId"`
+		Usage    apikeypolicy.QuotaUsageDelta `json:"usage"`
+		Canceled bool                         `json:"canceled"`
+	}
+	type receipt struct {
+		Transport   string       `json:"transport"`
+		Scenario    string       `json:"scenario"`
+		Frames      []string     `json:"frames"`
+		Settlements []settlement `json:"settlements"`
+		Admissions  int64        `json:"admissions"`
+	}
+	type scenario struct {
+		name       string
+		frames     []string
+		usage      apikeypolicy.QuotaUsageDelta
+		responseID string
+	}
+	base := apikeypolicy.QuotaUsageDelta{Provider: "codex", Model: "gpt-realtime"}
+	usage := func(input, output, total int64) apikeypolicy.QuotaUsageDelta {
+		delta := base
+		delta.InputTokens, delta.OutputTokens, delta.TotalTokens = input, output, total
+		return delta
+	}
+	buckets := usage(12, 8, 20)
+	buckets.ReasoningTokens, buckets.CachedTokens, buckets.CacheReadTokens, buckets.CacheWriteTokens = 3, 4, 4, 2
+	buckets.EffectiveServiceTier = "priority"
+	tierOnly := base
+	tierOnly.EffectiveServiceTier = "priority"
+	done := `{"type":"response.done","response":{"id":" duplicate ","usage":{"input_tokens":4,"output_tokens":5,"total_tokens":9}}}`
+	scenarios := []scenario{
+		{"codex_buckets", []string{`{"type":"response.done","response":{"id":" buckets ","service_tier":"priority","usage":{"input_tokens":12,"output_tokens":8,"input_tokens_details":{"cached_tokens":4,"cache_creation_tokens":2},"output_tokens_details":{"reasoning_tokens":3}}}}`}, buckets, "buckets"},
+		{"openai_fallback", []string{`{"type":"response.completed","response":{"id":"fallback"},"usage":{"prompt_tokens":4,"completion_tokens":5,"total_tokens":9}}`}, usage(4, 5, 9), "fallback"},
+		{"codex_precedence", []string{`{"type":"response.done","response":{"id":"precedence","usage":{"total_tokens":7}},"usage":{"total_tokens":999}}`}, usage(0, 0, 7), "precedence"},
+		{"tier_only_suppresses_fallback", []string{`{"type":"response.done","response":{"id":"tier","service_tier":"priority"},"usage":{"total_tokens":999}}`}, tierOnly, "tier"},
+		{"missing_usage", []string{`{"type":"response.completed","response":{"id":"missing"}}`}, base, "missing"},
+		{"missing_id", []string{`{"type":"response.done","usage":{"total_tokens":13}}`}, usage(0, 0, 13), ""},
+		{"duplicate", []string{done, done}, usage(4, 5, 9), "duplicate"},
+		{"nonterminal_then_done", []string{`{broken`, `{"type":"response.done ","usage":{"total_tokens":999}}`, `{"type":"response.output_text.delta"}`, `{"type":"response.completed","response":{"id":"last","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}}}`}, usage(2, 3, 5), "last"},
+	}
+	var receipts []receipt
+	for _, transport := range []string{"ws", "sideband"} {
+		t.Run(transport, func(t *testing.T) {
+			var admissions atomic.Int64
+			records := make(chan settlement, 32)
+			settle := func(ctx context.Context, eventID string, delta apikeypolicy.QuotaUsageDelta) error {
+				records <- settlement{eventID, delta, ctx.Err() != nil}
+				return errors.New("injected settlement failure")
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			decision := apikeypolicy.RequestPolicyDecision{Mode: apikeypolicy.ModeProfile, Snapshot: &apikeypolicy.RequestPolicySnapshot{
+				PolicyID: "policy", ProfileID: "profile", Quota: &apikeypolicy.Quota{Enabled: true, Epoch: 1},
+			}}
+			ctx = apikeypolicy.WithDecision(ctx, decision)
+			ctx = apikeypolicy.WithQuotaAdmission(ctx, func(_ context.Context, decision apikeypolicy.RequestPolicyDecision) (apikeypolicy.RequestPolicyDecision, error) {
+				decision.Snapshot.QuotaAdmissionID = fmt.Sprintf("admission-%d", admissions.Add(1))
+				decision.Snapshot.QuotaUsageSettlement = settle
+				return decision, nil
+			})
+			upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+				conn, err := upgrader.Upgrade(w, r, nil)
+				if err != nil {
+					return
+				}
+				defer conn.Close()
+				for _, test := range scenarios {
+					if _, _, err = conn.ReadMessage(); err != nil {
+						return
+					}
+					for _, frame := range test.frames {
+						if err = conn.WriteMessage(websocket.TextMessage, []byte(frame)); err != nil {
+							return
+						}
+					}
+				}
+				_, _, _ = conn.ReadMessage()
+			}))
+			defer upstreamServer.Close()
+			finished := make(chan struct{})
+			downstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer close(finished)
+				upstream, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(upstreamServer.URL, "http"), nil)
+				if err != nil {
+					return
+				}
+				upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+				downstream, err := upgrader.Upgrade(w, r, nil)
+				if err != nil {
+					upstream.Close()
+					return
+				}
+				if transport == "ws" {
+					_ = relayRealtimeWebsockets(ctx, downstream, upstream, "gpt-realtime")
+				} else {
+					_ = relaySidebandQuotaWebsockets(ctx, downstream, upstream, liveSession{callID: "receipt_call", quotaModel: "gpt-realtime", quotaSettlement: settle})
+				}
+			}))
+			defer downstreamServer.Close()
+			conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(downstreamServer.URL, "http"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			seenWSIDs := map[string]bool{}
+			for index, test := range scenarios {
+				if err = conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.create"}`)); err != nil {
+					t.Fatal(err)
+				}
+				for _, frame := range test.frames {
+					_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+					_, forwarded, readErr := conn.ReadMessage()
+					if readErr != nil || string(forwarded) != frame {
+						t.Fatalf("%s frame=%s error=%v", test.name, forwarded, readErr)
+					}
+				}
+				expectedCount := 1
+				if transport == "sideband" && test.name == "duplicate" {
+					expectedCount = 2
+				}
+				if transport == "ws" && (test.name == "missing_usage" || test.name == "tier_only_suppresses_fallback") {
+					expectedCount = 0
+				}
+				row := receipt{Transport: transport, Scenario: test.name, Frames: test.frames, Settlements: []settlement{}, Admissions: admissions.Load()}
+				for count := 0; count < expectedCount; count++ {
+					var record settlement
+					select {
+					case record = <-records:
+					default:
+						t.Fatalf("%s missing settlement", test.name)
+					}
+					if !reflect.DeepEqual(record.Usage, test.usage) || record.Canceled != (transport == "ws") {
+						t.Fatalf("%s settlement=%#v expected=%#v", test.name, record, test.usage)
+					}
+					if transport == "ws" {
+						suffix := ""
+						if test.responseID != "" {
+							suffix = ":response=" + test.responseID
+						}
+						if !strings.HasPrefix(record.EventID, "realtime:") || !strings.HasSuffix(record.EventID, suffix) || seenWSIDs[record.EventID] {
+							t.Fatalf("bad WS ID: %s", record.EventID)
+						}
+						seenWSIDs[record.EventID] = true
+						record.EventID = fmt.Sprintf("realtime:turn=%d%s", index+1, suffix)
+					} else {
+						wantID := "webrtc:receipt_call:response=" + test.responseID
+						if test.responseID == "" {
+							wantID = fmt.Sprintf("webrtc:receipt_call:payload=%x", sha256.Sum256([]byte(test.frames[len(test.frames)-1])))
+						}
+						if record.EventID != wantID {
+							t.Fatalf("sideband ID=%s want=%s", record.EventID, wantID)
+						}
+					}
+					row.Settlements = append(row.Settlements, record)
+				}
+				select {
+				case extra := <-records:
+					t.Fatalf("%s extra settlement=%#v", test.name, extra)
+				default:
+				}
+				if transport == "ws" && admissions.Load() != int64(index+1) {
+					t.Fatalf("%s admissions=%d", test.name, admissions.Load())
+				}
+				receipts = append(receipts, row)
+			}
+			_ = conn.Close()
+			select {
+			case <-finished:
+			case <-time.After(3 * time.Second):
+				t.Fatal("relay did not stop after disconnect")
+			}
+			select {
+			case extra := <-records:
+				t.Fatalf("disconnect manufactured usage=%#v", extra)
+			default:
+			}
+		})
+	}
+	if destination := os.Getenv("REALTIME_USAGE_RECEIPT"); destination != "" {
+		data, err := json.MarshalIndent(receipts, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(destination, append(data, '\n'), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
