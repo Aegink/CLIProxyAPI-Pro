@@ -120,7 +120,6 @@ import {
   type AccountInspectionBatchScope,
   type AccountInspectionScheduleResponse,
 } from './api';
-import { apiClient } from '@/services/api/client';
 import { authFilesApi } from '@/services/api/authFiles';
 import { quotaPersistenceMiddleware } from '@/pro/modules/quota';
 import { useAuthStore, useNotificationStore, useQuotaStore } from '@/stores';
@@ -672,12 +671,10 @@ export function AccountInspectionPage() {
         ACCOUNT_INSPECTION_EXPORT_DOWNLOAD_CONCURRENCY,
         async (file) => {
           const name = file.name.trim();
-          const downloadResponse = await apiClient.getRaw(`/auth-files/download?name=${encodeURIComponent(name)}`, {
-            responseType: 'blob',
-          });
-          const blob = downloadResponse.data instanceof Blob
-            ? downloadResponse.data
-            : new Blob([downloadResponse.data], { type: 'application/json' });
+          const download = await authFilesApi.download(name);
+          const blob = download instanceof Blob
+            ? download
+            : new Blob([download], { type: 'application/json' });
           return {
             name,
             content: await blob.text(),

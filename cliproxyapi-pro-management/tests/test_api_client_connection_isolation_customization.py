@@ -51,7 +51,11 @@ class ApiClient {
   private apiBase: string = '';
   private managementKey: string = '';
   setConfig(config: ApiClientConfig): void {
-    this.apiBase = computeApiUrl(config.apiBase);
+    const apiBase = computeApiUrl(config.apiBase);
+    if (apiBase !== this.apiBase || config.managementKey !== this.managementKey) {
+      this.connectionRevision += 1;
+    }
+    this.apiBase = apiBase;
     this.managementKey = config.managementKey;
 
     if (config.timeout) {
@@ -82,8 +86,8 @@ class ApiClient {
             first_client, first_store = self.apply_patch(root, upstream_client)
             self.assertIn('private connectionGeneration: number = 0;', first_client)
             self.assertIn('private connectionAbortController = new AbortController();', first_client)
-            self.assertIn('const nextApiBase = computeApiUrl(config.apiBase);', first_client)
-            self.assertIn('const connectionChanged =', first_client)
+            self.assertIn('const apiBase = computeApiUrl(config.apiBase);', first_client)
+            self.assertIn('this.connectionRevision += 1;', first_client)
             self.assertIn('this.connectionAbortController.abort();', first_client)
             self.assertIn('config.signal = this.combineRequestSignal(config.signal);', first_client)
             self.assertIn('__connectionGeneration = this.connectionGeneration;', first_client)

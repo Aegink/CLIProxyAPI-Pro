@@ -1,3 +1,5 @@
+> Historical pre-v1.25.0 adapter scenarios. The latest-only build now uses upstream native v8 editing; see PATCH_MAINTENANCE.md for the current regression contract. Legacy/mixed fallback and byte-identical no-op expectations below no longer apply.
+
 # Visual configuration v8 boundary failures (written before implementation)
 
 Drive the actual `useVisualConfig` hook through the React browser harness. Save its

@@ -34,3 +34,27 @@
 巡检错误仅作为观测保存，不写入原生调度错误；行政启用不解除额度保护或已有不可用状态。手动解除只更新限制字段，健康结论必须来自新探测。后台恢复失败推进退避，持久化失败时用按保护版本绑定的临时退避避免队列饥饿。管理端检查共享 55 秒总时限，返回阶段结果和最新限制；前端无论成功、失败或超时都重新读取看板。定向真实请求携带管理层观察的账号身份，并在准备和发送前复核，继续保留结果回写的身份与限制指纹保护。
 
 Core 验证对 candidate 和 clean baseline 同样应用 `codex_live_media_loopback.patch`：仅将同进程 WebRTC 桥接测试的四个节点限制到回环 ICE 候选，保留真实音频、文本和二进制通道断言；不修改生产网络配置、不跳过测试。上游测试自行隔离主机网络接口后移除该 fixture；补丁漂移必须显式失败。
+
+### Management v1.25.0 compatibility
+
+The latest-only baseline is `b87b9487f63e08ad97b1fb4e7c17b4adb811b922`.
+Retire the legacy visual-layout adapter: upstream now edits v8 paths natively.
+`src/hooks/useVisualConfig.ts` stays byte-for-byte upstream, including recovered
+payload AST lineage and concurrent-list conflict checks. The historical
+`e2e/v8-visual-config` legacy/mixed-layout scenarios are not the current contract;
+upstream `visualConfigV8`, `visualConfigRebase`, `visualConfigPayloadAst`, and
+`visualConfigConcurrency` tests validate the native behavior. In particular, do
+not promise legacy fallback or byte-identical no-op serialization.
+
+Keep Pro credential cache/model-query extensions on upstream `/credentials`
+endpoints, and attach cancellation to its existing connection revision increment
+without replacing its ABA guard. Inspection WebSocket URLs accept a bare base or
+an explicit v8 prefix (and normalize an old v0 suffix to the current prefix).
+
+The cooldown hint test fixture compares HTML-escaped translated text, preserving
+its assertion. Clean upstream's full test suite also fails on the unescaped
+English apostrophe; remove this fixture when upstream escapes the expectation.
+The reviewed patch surface removes `src/hooks/useVisualConfig.ts` and adds only
+`tests/authFileCooldowns.test.ts`; all other modified upstream paths are unchanged.
+Credential exports reuse upstream `authFilesApi.download`, avoiding a second
+hard-coded route that can drift independently of the API client.

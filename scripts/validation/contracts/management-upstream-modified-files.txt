@@ -1,4 +1,4 @@
-# Latest-only baseline: Management v1.24.2 (4530da2).
+# Latest-only baseline: Management v1.25.0 (b87b9487f63e08ad97b1fb4e7c17b4adb811b922).
 # Update this reviewed surface only when adapting to a newer latest upstream release.
 src/App.tsx
 src/components/common/ConfirmationModal.tsx
@@ -22,7 +22,6 @@ src/features/quota/logic.ts
 src/features/quota/providers/index.ts
 src/features/quota/providers/types.ts
 src/features/quota/providers/xai/data.ts
-src/hooks/useVisualConfig.ts
 src/pages/LoginPage.module.scss
 src/pages/LoginPage.tsx
 src/pages/SystemPage.tsx
@@ -40,4 +39,5 @@ src/utils/quota/builders.ts
 src/utils/quota/constants.ts
 src/utils/quota/resolvers.ts
 src/utils/quota/xaiPaid.ts
+tests/authFileCooldowns.test.ts
 tests/quotaPageLogic.test.ts

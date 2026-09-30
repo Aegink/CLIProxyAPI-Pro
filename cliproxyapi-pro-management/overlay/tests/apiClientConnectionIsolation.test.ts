@@ -15,6 +15,16 @@ afterEach(() => {
 });
 
 describe('API client connection isolation', () => {
+  test('preserves native revision semantics for unchanged and ABA connections', () => {
+    apiClient.setConfig({ apiBase: 'https://a.example.com', managementKey: 'key' });
+    const revision = apiClient.getConnectionRevision();
+    apiClient.setConfig({ apiBase: 'https://a.example.com', managementKey: 'key', timeout: 123 });
+    expect(apiClient.getConnectionRevision()).toBe(revision);
+    apiClient.setConfig({ apiBase: 'https://b.example.com', managementKey: 'key' });
+    apiClient.setConfig({ apiBase: 'https://a.example.com', managementKey: 'key' });
+    expect(apiClient.getConnectionRevision()).toBe(revision + 2);
+  });
+
   test('physically aborts an in-flight request when the connection changes', async () => {
     let listenerReady = false;
     let physicallyAborted = false;

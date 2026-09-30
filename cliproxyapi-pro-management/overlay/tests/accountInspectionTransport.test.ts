@@ -8,8 +8,11 @@ import {
 
 describe('account inspection transport contract', () => {
   test('builds a secure management websocket URL without query credentials', () => {
-    const url = buildAccountInspectionLogsWebSocketUrl('https://example.com/v0/management', true);
-    expect(url).toBe('wss://example.com/v0/management/account-inspection/logs?details=1');
+    const url = buildAccountInspectionLogsWebSocketUrl('https://example.com/v8/management', true);
+    expect(url).toBe('wss://example.com/v8/management/account-inspection/logs?details=1');
+    for (const base of ['https://example.com', 'https://example.com/v8/management/', 'https://example.com/v0/management']) {
+      expect(buildAccountInspectionLogsWebSocketUrl(base, true)).toBe(url);
+    }
     expect(url).not.toContain('secret');
     expect(accountInspectionWebSocketProtocol('a key/with symbols')).toBe(
       'cpa-management.a%20key%2Fwith%20symbols'

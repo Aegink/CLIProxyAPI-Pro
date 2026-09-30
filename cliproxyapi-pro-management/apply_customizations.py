@@ -1063,25 +1063,12 @@ def patch_api_client_connection_isolation(target: Path) -> None:
     )
     text = read(client)
     if 'this.connectionGeneration += 1;' not in text:
-        old = (
-            "    this.apiBase = computeApiUrl(config.apiBase);\n"
-            "    this.managementKey = config.managementKey;\n"
-            "\n"
-            "    if (config.timeout) {\n"
-        )
+        old = "      this.connectionRevision += 1;\n"
         new = (
-            "    const nextApiBase = computeApiUrl(config.apiBase);\n"
-            "    const connectionChanged =\n"
-            "      this.apiBase !== nextApiBase || this.managementKey !== config.managementKey;\n"
-            "    this.apiBase = nextApiBase;\n"
-            "    this.managementKey = config.managementKey;\n"
-            "    if (connectionChanged) {\n"
+            "      this.connectionRevision += 1;\n"
             "      this.connectionAbortController.abort();\n"
             "      this.connectionAbortController = new AbortController();\n"
             "      this.connectionGeneration += 1;\n"
-            "    }\n"
-            "\n"
-            "    if (config.timeout) {\n"
         )
         if text.count(old) != 1:
             raise RuntimeError(f'Expected latest connection-change shape in {client}')
@@ -1491,7 +1478,7 @@ def patch_auth_file_connection_test(target: Path) -> None:
         "    name: string\n"
         "  ): Promise<{ id: string; display_name?: string; type?: string; owned_by?: string }[]> {\n"
         "    const data = await apiClient.get<Record<string, unknown>>(\n"
-        "      `/auth-files/models?name=${encodeURIComponent(name)}`\n"
+        "      `/credentials/models?name=${encodeURIComponent(name)}`\n"
         "    );\n",
         "  async getModelsForAuthFile(\n"
         "    name: string,\n"
@@ -1503,7 +1490,7 @@ def patch_auth_file_connection_test(target: Path) -> None:
         "      ? `&auth_index=${encodeURIComponent(normalizedAuthIndex)}`\n"
         "      : '';\n"
         "    const data = await apiClient.get<Record<string, unknown>>(\n"
-        "      `/auth-files/models?name=${encodeURIComponent(name)}${authIndexQuery}${purpose === 'connection-test' ? '&purpose=connection-test' : ''}`\n"
+        "      `/credentials/models?name=${encodeURIComponent(name)}${authIndexQuery}${purpose === 'connection-test' ? '&purpose=connection-test' : ''}`\n"
         "    );\n",
     )
 
@@ -1605,44 +1592,44 @@ def patch_supporting_api_and_types(target: Path) -> None:
     insert_once(
         auth_files_path,
         "export const authFilesApi = {\n",
-        "const AUTH_FILES_LIST_CACHE_TTL_MS = 2000;\nlet authFilesListCache: { expiresAt: number; response: AuthFilesResponse } | null = null;\nlet authFilesListRequest: Promise<AuthFilesResponse> | null = null;\nlet authFilesListVersion = 0;\n\nconst cloneAuthFilesResponse = (response: AuthFilesResponse): AuthFilesResponse => ({\n  ...response,\n  files: Array.isArray(response.files) ? [...response.files] : [],\n});\n\nconst invalidateAuthFilesListCache = () => {\n  authFilesListVersion += 1;\n  authFilesListCache = null;\n  authFilesListRequest = null;\n};\n\nconst fetchAuthFilesList = async (lookup?: AuthFileLookup): Promise<AuthFilesResponse> => {\n  if (lookup) {\n    return normalizeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/auth-files', {\n      params: { name: lookup.name, auth_index: lookup.authIndex },\n    }));\n  }\n  const now = Date.now();\n  if (authFilesListCache && authFilesListCache.expiresAt > now) {\n    return cloneAuthFilesResponse(authFilesListCache.response);\n  }\n  if (!authFilesListRequest) {\n    const requestVersion = authFilesListVersion;\n    authFilesListRequest = apiClient.get<AuthFilesResponse>('/auth-files', undefined)\n      .then(normalizeAuthFilesResponse)\n      .then((response) => {\n        if (requestVersion === authFilesListVersion) {\n          authFilesListCache = {\n            expiresAt: Date.now() + AUTH_FILES_LIST_CACHE_TTL_MS,\n            response: cloneAuthFilesResponse(response),\n          };\n        }\n        return response;\n      })\n      .finally(() => {\n        if (requestVersion === authFilesListVersion) {\n          authFilesListRequest = null;\n        }\n      });\n  }\n  return cloneAuthFilesResponse(await authFilesListRequest);\n};\n\nexport const authFilesApi = {\n",
+        "const AUTH_FILES_LIST_CACHE_TTL_MS = 2000;\nlet authFilesListCache: { expiresAt: number; response: AuthFilesResponse } | null = null;\nlet authFilesListRequest: Promise<AuthFilesResponse> | null = null;\nlet authFilesListVersion = 0;\n\nconst cloneAuthFilesResponse = (response: AuthFilesResponse): AuthFilesResponse => ({\n  ...response,\n  files: Array.isArray(response.files) ? [...response.files] : [],\n});\n\nconst invalidateAuthFilesListCache = () => {\n  authFilesListVersion += 1;\n  authFilesListCache = null;\n  authFilesListRequest = null;\n};\n\nconst fetchAuthFilesList = async (lookup?: AuthFileLookup): Promise<AuthFilesResponse> => {\n  if (lookup) {\n    return normalizeAuthFilesResponse(await apiClient.get<AuthFilesResponse>('/credentials', {\n      params: { name: lookup.name, auth_index: lookup.authIndex },\n    }));\n  }\n  const now = Date.now();\n  if (authFilesListCache && authFilesListCache.expiresAt > now) {\n    return cloneAuthFilesResponse(authFilesListCache.response);\n  }\n  if (!authFilesListRequest) {\n    const requestVersion = authFilesListVersion;\n    authFilesListRequest = apiClient.get<AuthFilesResponse>('/credentials', undefined)\n      .then(normalizeAuthFilesResponse)\n      .then((response) => {\n        if (requestVersion === authFilesListVersion) {\n          authFilesListCache = {\n            expiresAt: Date.now() + AUTH_FILES_LIST_CACHE_TTL_MS,\n            response: cloneAuthFilesResponse(response),\n          };\n        }\n        return response;\n      })\n      .finally(() => {\n        if (requestVersion === authFilesListVersion) {\n          authFilesListRequest = null;\n        }\n      });\n  }\n  return cloneAuthFilesResponse(await authFilesListRequest);\n};\n\nexport const authFilesApi = {\n",
         "AUTH_FILES_LIST_CACHE_TTL_MS",
     )
     list_replacement = (
-        "  list: fetchAuthFilesList,\n\n  setStatus: async (name: string, disabled: boolean) => {\n    const response = await apiClient.patch<AuthFileStatusResponse>('/auth-files/status', { name, disabled });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n"
+        "  list: fetchAuthFilesList,\n\n  setStatus: async (name: string, disabled: boolean) => {\n    const response = await apiClient.patch<AuthFileStatusResponse>('/credentials/status', { name, disabled });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n"
     )
     replace_once(
         auth_files_path,
         "  list: async (lookup?: AuthFileLookup) =>\n"
         "    normalizeAuthFilesResponse(\n"
         "      await apiClient.get<AuthFilesResponse>(\n"
-        "        '/auth-files',\n"
+        "        '/credentials',\n"
         "        lookup ? { params: { name: lookup.name, auth_index: lookup.authIndex } } : undefined\n"
         "      )\n"
         "    ),\n\n"
         "  setStatus: (name: string, disabled: boolean) =>\n"
-        "    apiClient.patch<AuthFileStatusResponse>('/auth-files/status', { name, disabled }),\n\n",
+        "    apiClient.patch<AuthFileStatusResponse>('/credentials/status', { name, disabled }),\n\n",
         list_replacement,
     )
     replace_once(
         auth_files_path,
-        "  patchFields: (name: string, fields: AuthFileFieldsPatch) =>\n    apiClient.patch('/auth-files/fields', { name, ...fields }),\n\n",
-        "  patchFields: async (name: string, fields: AuthFileFieldsPatch) => {\n    const response = await apiClient.patch('/auth-files/fields', { name, ...fields });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n\n",
+        "  patchFields: (name: string, fields: AuthFileFieldsPatch) =>\n    apiClient.patch('/credentials/fields', { name, ...fields }),\n\n",
+        "  patchFields: async (name: string, fields: AuthFileFieldsPatch) => {\n    const response = await apiClient.patch('/credentials/fields', { name, ...fields });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n\n",
     )
     replace_once(
         auth_files_path,
-        "    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/auth-files', formData);\n    return normalizeBatchUploadResponse(payload, requestedNames);\n",
-        "    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/auth-files', formData);\n    invalidateAuthFilesListCache();\n    return normalizeBatchUploadResponse(payload, requestedNames);\n",
+        "    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/credentials', formData);\n    return normalizeBatchUploadResponse(payload, requestedNames);\n",
+        "    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/credentials', formData);\n    invalidateAuthFilesListCache();\n    return normalizeBatchUploadResponse(payload, requestedNames);\n",
     )
     replace_once(
         auth_files_path,
-        "    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>('/auth-files', {\n      data: { names: requestedNames },\n    });\n    return normalizeBatchDeleteResponse(payload, requestedNames);\n",
-        "    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>('/auth-files', {\n      data: { names: requestedNames },\n    });\n    invalidateAuthFilesListCache();\n    return normalizeBatchDeleteResponse(payload, requestedNames);\n",
+        "    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>('/credentials', {\n      data: { names: requestedNames },\n    });\n    return normalizeBatchDeleteResponse(payload, requestedNames);\n",
+        "    const payload = await apiClient.delete<AuthFileBatchDeleteResponse>('/credentials', {\n      data: { names: requestedNames },\n    });\n    invalidateAuthFilesListCache();\n    return normalizeBatchDeleteResponse(payload, requestedNames);\n",
     )
     replace_once(
         auth_files_path,
-        "  deleteAll: () => apiClient.delete('/auth-files', { params: { all: true } }),\n",
-        "  deleteAll: async () => {\n    const response = await apiClient.delete('/auth-files', { params: { all: true } });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n",
+        "  deleteAll: () => apiClient.delete('/credentials', { params: { all: true } }),\n",
+        "  deleteAll: async () => {\n    const response = await apiClient.delete('/credentials', { params: { all: true } });\n    invalidateAuthFilesListCache();\n    return response;\n  },\n",
     )
 
     replace_once(
@@ -2133,21 +2120,15 @@ def patch_auth_files_page_sorting_latest(target: Path) -> None:
     replace_once(page_path, '          sortMode={sortMode}\n', '          sortMode={effectiveSortMode}\n')
 
 
-def patch_visual_config_layout(target: Path) -> None:
-    path = target / 'src/hooks/useVisualConfig.ts'
-    replace_once(path,
-        "import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument } from 'yaml';",
-        "import { isMap, isScalar, isSeq, parseDocument } from 'yaml';\n"
-        "import { readVisualConfigLayout, editVisualConfigLayout } from '@/utils/visualConfigLayout';")
-    replace_once(path,
-        'const parsedRaw: unknown = parseYaml(yamlContent) || {};',
-        'const parsedRaw: unknown = readVisualConfigLayout(yamlContent) || {};')
-    replace_once(path,
-        '        const doc = parseDocument(currentYaml);',
-        '        const layout = editVisualConfigLayout(currentYaml);\n        const doc = layout.doc;')
-    replace_once(path,
-        '        return doc.toString({ indent: 2, lineWidth: 120, minContentWidth: 0 });',
-        '        return layout.finish();')
+def patch_cooldown_hint_test(target: Path) -> None:
+    # Upstream compares raw translation text to escaped HTML. The English
+    # apostrophe fails only when another test selected English first. Preserve
+    # the assertion and compare the actual HTML representation instead.
+    replace_once(
+        target / 'tests/authFileCooldowns.test.ts',
+        "expect(available).toContain(i18n.t('auth_files.cooldown_reset_hint'));",
+        "expect(available).toContain(Bun.escapeHTML(i18n.t('auth_files.cooldown_reset_hint')));",
+    )
 
 
 def main() -> None:
@@ -2160,7 +2141,7 @@ def main() -> None:
         raise SystemExit(f'Overlay directory not found: {OVERLAY_DIR}')
 
     copy_overlay(target)
-    patch_visual_config_layout(target)
+    patch_cooldown_hint_test(target)
     patch_modal_focus_restore(target)
     patch_modal_lifecycle(target)
     patch_sheet_lifecycle(target)
