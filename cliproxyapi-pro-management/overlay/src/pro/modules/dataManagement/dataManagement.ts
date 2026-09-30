@@ -1,4 +1,4 @@
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import type { DataManagementSettings } from './dataManagementSettings';
 
 export type DataSensitivity = 'internal' | 'sensitive' | 'secret';
@@ -200,31 +200,33 @@ export const dataManagementApi = {
   testWebDAV(): Promise<WebDAVConnectionTestResult> {
     return apiClient.post<WebDAVConnectionTestResult>('/data/backups/test', {});
   },
-  async previewRestore(data: ArrayBuffer, passphrase: string, allowLegacy: boolean): Promise<DataRestorePreview> {
+  async previewRestore(data: ArrayBuffer, passphrase: string, allowLegacy: boolean, signal?: AbortSignal): Promise<DataRestorePreview> {
     const preview = await apiClient.post<DataRestorePreview>('/data/backups/preview', data, {
       headers: {
         'Content-Type': 'application/octet-stream',
         ...(passphrase ? { 'X-CLIProxy-Backup-Passphrase': passphrase } : {}),
       },
       params: allowLegacy ? { allow_legacy: 1 } : undefined,
+      signal,
     });
     return normalizeRestorePreview(preview);
   },
-  async previewWebDAVRestore(fileName: string): Promise<DataRestorePreview> {
-    const preview = await apiClient.post<DataRestorePreview>('/data/backups/webdav/preview', { fileName });
+  async previewWebDAVRestore(fileName: string, signal?: AbortSignal): Promise<DataRestorePreview> {
+    const preview = await apiClient.post<DataRestorePreview>('/data/backups/webdav/preview', { fileName }, { signal });
     return normalizeRestorePreview(preview);
   },
-  restore(data: ArrayBuffer, passphrase: string, allowLegacy: boolean): Promise<Record<string, unknown>> {
+  restore(data: ArrayBuffer, passphrase: string, allowLegacy: boolean, signal?: AbortSignal): Promise<Record<string, unknown>> {
     return apiClient.post<Record<string, unknown>>('/data/backups/restore', data, {
       headers: {
         'Content-Type': 'application/octet-stream',
         ...(passphrase ? { 'X-CLIProxy-Backup-Passphrase': passphrase } : {}),
       },
       params: allowLegacy ? { allow_legacy: 1 } : undefined,
+      signal,
     });
   },
-  restoreWebDAV(fileName: string, allowLegacy: boolean, expectedSha256: string): Promise<Record<string, unknown>> {
-    return apiClient.post<Record<string, unknown>>('/data/backups/webdav/restore', { fileName, allowLegacy, expectedSha256 });
+  restoreWebDAV(fileName: string, allowLegacy: boolean, expectedSha256: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return apiClient.post<Record<string, unknown>>('/data/backups/webdav/restore', { fileName, allowLegacy, expectedSha256 }, { signal });
   },
   previewCleanup(request: DataCleanupRequest): Promise<DataCleanupPreview> {
     return apiClient.post<DataCleanupPreview>('/data/maintenance/preview', request);

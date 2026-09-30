@@ -1,5 +1,5 @@
-import { apiClient } from '@/services/api/client';
-import { MANAGEMENT_API_PREFIX } from '@/utils/constants';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
+import { computeProManagementApiUrl } from '@/pro/shared/proManagementUrl';
 import type {
   AccountInspectionBackendLog as BackendLog,
   AccountInspectionBackendResponse,
@@ -184,8 +184,8 @@ const buildAccountInspectionDetailParams = (options: boolean | AccountInspection
 };
 
 export const buildAccountInspectionLogsWebSocketUrl = (apiBase: string, includeDetails = false) => {
-  const base = apiBase.replace(/\/?v(?:0|8)\/management\/?$/i, '').replace(/\/+$/i, '');
-  const url = new URL(`${base}${MANAGEMENT_API_PREFIX}/account-inspection/logs`);
+  const base = computeProManagementApiUrl(apiBase);
+  const url = new URL(`${base}/account-inspection/logs`);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('details', includeDetails ? '1' : '0');
   return url.toString();

@@ -20,6 +20,13 @@ class ManagementV125CustomizationTests(unittest.TestCase):
         contract = (ROOT.parent / 'scripts/validation/contracts/management-upstream-modified-files.txt').read_text()
         self.assertNotIn('src/hooks/useVisualConfig.ts', contract)
 
+    def test_connection_probe_uses_pro_transport_without_downgrading_credentials(self):
+        source = (ROOT / 'apply_customizations.py').read_text()
+        self.assertIn("proApiClient.post<AuthFileConnectionTestResponse>('/auth-files/test'", source)
+        self.assertNotIn("apiClient.post<AuthFileConnectionTestResponse>('/auth-files/test'", source)
+        self.assertIn("apiClient.get<AuthFilesResponse>('/credentials'", source)
+        self.assertIn("apiClient.patch('/credentials/fields'", source)
+
     def test_cooldown_hint_assertion_is_escaped_and_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)

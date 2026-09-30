@@ -49,7 +49,7 @@ not promise legacy fallback or byte-identical no-op serialization.
 Keep Pro credential cache/model-query extensions on upstream `/credentials`
 endpoints, and attach cancellation to its existing connection revision increment
 without replacing its ABA guard. Inspection WebSocket URLs accept a bare base or
-an explicit v8 prefix (and normalize an old v0 suffix to the current prefix).
+an explicit v0/v8 prefix and use the Pro v0 route described below.
 
 The cooldown hint test fixture compares HTML-escaped translated text, preserving
 its assertion. Clean upstream's full test suite also fails on the unescaped
@@ -58,3 +58,15 @@ The reviewed patch surface removes `src/hooks/useVisualConfig.ts` and adds only
 `tests/authFileCooldowns.test.ts`; all other modified upstream paths are unchanged.
 Credential exports reuse upstream `authFilesApi.download`, avoiding a second
 hard-coded route that can drift independently of the API client.
+
+Native Management requests retain `/v8/management`. Pro extensions use the
+explicit `proApiClient` namespace on the same authenticated API client, selecting
+`/v0/management` only at dispatch. This includes legacy configuration reads used
+by Pro features, quota cache, data management, policy, inspection, model catalog,
+and panel update routes. Do not globally downgrade the native client or depend on
+new Core aliases: management.html updates independently of the released Core.
+Pro SSE/WebSocket URLs use the same v0 URL helper, preserving reverse-proxy path
+prefixes and accepting bare, v0-suffixed, or v8-suffixed server addresses.
+Route regression tests must exercise the real HTTP transport, not only mocked
+apiClient methods. The release contract harness additionally checks the existing
+Core binary and quota persistence across a process restart.

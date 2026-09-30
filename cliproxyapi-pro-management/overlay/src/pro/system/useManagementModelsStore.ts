@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import { normalizeModelList, type ModelInfo } from '@/utils/models';
 import { CACHE_EXPIRY_MS } from '@/utils/constants';
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import { useAuthStore } from '@/stores/useAuthStore';
-import { computeApiUrl } from '@/utils/connection';
+import { computeProManagementApiUrl } from '@/pro/shared/proManagementUrl';
 import { isRecordValue } from '@/pro/shared/value';
 import {
   loadLegacyModelPrices,
@@ -345,8 +345,8 @@ const mergeUsagePayload = (current: UsagePayload | null, next: UsagePayload | nu
   });
 };
 
-const buildUsageStreamUrl = (apiBase: string, afterId: number, generation: number) => {
-  const base = computeApiUrl(apiBase);
+export const buildUsageStreamUrl = (apiBase: string, afterId: number, generation: number) => {
+  const base = computeProManagementApiUrl(apiBase);
   if (!base) return '';
   const url = new URL(`${base}/usage/stream`);
   url.searchParams.set('after_id', String(Math.max(afterId, 0)));

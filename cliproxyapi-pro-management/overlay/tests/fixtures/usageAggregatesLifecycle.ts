@@ -66,8 +66,8 @@ const calls: any[] = [];
 let holdRequests = false;
 let failRequests = false;
 const releases: Array<() => void> = [];
-mock.module(root + '/src/services/api/client.ts', () => ({
-  apiClient: {
+mock.module(root + '/src/pro/shared/proManagementTransport.ts', () => ({
+  proApiClient: {
     get: async (_: string, { params }: any) => {
       calls.push({ at: now, params });
       if (holdRequests) await new Promise<void>((resolve) => releases.push(resolve));

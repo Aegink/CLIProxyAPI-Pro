@@ -1,5 +1,5 @@
 import { authFilesApi } from '@/services/api/authFiles';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 const DEFAULT_PROXY_POOL_LISTEN = '127.0.0.1:8318';
 
 export const PROXY_POOL_TEST_CONCURRENCY_LIMITS = { min: 1, max: 8, default: 4 } as const;
@@ -402,13 +402,16 @@ export const isProxyPoolListenerUrl = (proxyUrl: string, listen: string): boolea
 
 const waitForStatus = async (
   listen: string,
-  minimumGeneration = 0,
+  minimumGeneration: number,
+  connectionRevision: number,
   attempts = 30
 ): Promise<ProxyPoolStatus> => {
   let lastError: unknown = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    apiClient.assertConnectionRevision(connectionRevision);
     try {
       const status = normalizeProxyPoolStatus(await apiClient.get('/pro/proxy-pool/status'));
+      apiClient.assertConnectionRevision(connectionRevision);
       if (
         status.ready &&
         status.listen === listen.trim() &&
@@ -417,10 +420,13 @@ const waitForStatus = async (
         return status;
       }
     } catch (error) {
+      apiClient.assertConnectionRevision(connectionRevision);
+      if ((error as { code?: string } | null)?.code === 'ERR_CANCELED') throw error;
       lastError = error;
     }
     await new Promise((resolve) => window.setTimeout(resolve, 250));
   }
+  apiClient.assertConnectionRevision(connectionRevision);
   throw lastError instanceof Error
     ? lastError
     : new Error('Proxy pool runtime did not become ready in time');
@@ -501,15 +507,19 @@ export const proxyPoolApi = {
   },
 
   async save(config: ProxyPoolConfig): Promise<ProxyPoolStatus> {
+    const connectionRevision = apiClient.getConnectionRevision();
     const nextConfig = { ...config, enabled: true };
     let minimumGeneration: number;
     try {
       minimumGeneration = (await this.status()).generation + 1;
-    } catch {
+    } catch (error) {
+      apiClient.assertConnectionRevision(connectionRevision);
+      if ((error as { code?: string } | null)?.code === 'ERR_CANCELED') throw error;
       minimumGeneration = 1;
     }
+    apiClient.assertConnectionRevision(connectionRevision);
     await apiClient.patch('/pro/proxy-pool/config', serializeProxyPoolConfig(nextConfig));
-    const status = await waitForStatus(nextConfig.listen, minimumGeneration);
+    const status = await waitForStatus(nextConfig.listen, minimumGeneration, connectionRevision);
     return status;
   },
 

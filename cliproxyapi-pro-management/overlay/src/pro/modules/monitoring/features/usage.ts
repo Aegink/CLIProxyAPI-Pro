@@ -1,5 +1,5 @@
 import i18n from '@/i18n';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import { maskApiKey } from '@/utils/format';
 import { normalizeAuthIndex } from '@/utils/authIndex';
 import { parseTimestampMs } from '@/utils/timestamp';

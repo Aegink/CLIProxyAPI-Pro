@@ -1,4 +1,4 @@
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import type { ApiError } from '@/types';
 
 export type APIKeyPolicyState = 'unconfigured' | 'configured' | 'orphaned' | 'unavailable';

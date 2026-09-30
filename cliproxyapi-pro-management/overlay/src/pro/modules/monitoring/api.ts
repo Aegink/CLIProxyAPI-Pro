@@ -1,5 +1,5 @@
 import type { AxiosRequestConfig } from 'axios';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import { resolveTimeRange, type TimeRangeSelection } from './features/timeRange';
 
 export type AccountUsageDayStat = {

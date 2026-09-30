@@ -1107,7 +1107,7 @@ def patch_api_client_connection_isolation(target: Path) -> None:
         "  /**\n   * 设置请求/响应拦截器\n   */\n",
         'private isStaleConnection(config: AxiosRequestConfig | undefined)',
     )
-    replace_once(
+    insert_once(
         client,
         "      (config) => {\n"
         "        // 设置 baseURL\n"
@@ -1118,6 +1118,7 @@ def patch_api_client_connection_isolation(target: Path) -> None:
         "        config.signal = this.combineRequestSignal(config.signal);\n"
         "        // 设置 baseURL\n"
         "        config.baseURL = this.apiBase;\n",
+        '.__connectionGeneration = this.connectionGeneration;',
     )
     replace_once(
         client,
@@ -1156,6 +1157,47 @@ def patch_api_client_connection_isolation(target: Path) -> None:
         "        apiClient.setConfig({ apiBase: '', managementKey: '' });\n"
         "        set({\n"
         "          isAuthenticated: false,\n",
+    )
+
+
+def patch_api_client_management_namespace(target: Path) -> None:
+    path = target / 'src/services/api/client.ts'
+    insert_once(
+        path,
+        "import { computeApiUrl } from '@/utils/connection';\n",
+        "import { computeApiUrl } from '@/utils/connection';\n"
+        "import { computeProManagementApiUrl, normalizeManagementApiBase } from '@/pro/shared/proManagementUrl';\n",
+        "from '@/pro/shared/proManagementUrl'",
+    )
+    insert_once(
+        path,
+        "  private apiBase: string = '';\n",
+        "  private apiBase: string = '';\n  private proApiBase: string = '';\n",
+        'private proApiBase:',
+    )
+    replace_once(
+        path,
+        '    const apiBase = computeApiUrl(config.apiBase);\n',
+        '    const apiBase = computeApiUrl(normalizeManagementApiBase(config.apiBase));\n',
+    )
+    replace_once(
+        path,
+        '    this.apiBase = apiBase;\n',
+        '    this.apiBase = apiBase;\n'
+        '    this.proApiBase = computeProManagementApiUrl(config.apiBase);\n',
+    )
+    replace_once(
+        path,
+        '        config.baseURL = this.apiBase;\n',
+        '        const scopedConfig = config as AxiosRequestConfig & {\n'
+        "          managementApiNamespace?: 'pro';\n"
+        '          managementConnectionRevision?: number;\n'
+        '        };\n'
+        '        const namespace = scopedConfig.managementApiNamespace;\n'
+        "        if (namespace === 'pro' && scopedConfig.managementConnectionRevision !== this.connectionRevision) {\n"
+        '          throw this.staleConnectionError();\n'
+        '        }\n'
+        "        config.baseURL = namespace === 'pro' ? this.proApiBase : this.apiBase;\n",
     )
 
 
@@ -1445,6 +1487,14 @@ def patch_auth_file_connection_test(target: Path) -> None:
 
     insert_once(
         api_path,
+        "import { apiClient } from './client';\n",
+        "import { apiClient } from './client';\n"
+        "import { proApiClient } from '@/pro/shared/proManagementTransport';\n",
+        "import { proApiClient } from '@/pro/shared/proManagementTransport';",
+    )
+
+    insert_once(
+        api_path,
         "type AuthFileStatusResponse = { status: string; disabled: boolean };\n",
         "type AuthFileStatusResponse = { status: string; disabled: boolean };\n"
         "export type AuthFileConnectionTestResponse = {\n"
@@ -1467,7 +1517,7 @@ def patch_auth_file_connection_test(target: Path) -> None:
         api_path,
         "  uploadFiles: async (files: File[]): Promise<AuthFileBatchUploadResult> => {\n",
         "  testConnection: (payload: AuthFileConnectionTestRequest, signal?: AbortSignal) =>\n"
-        "    apiClient.post<AuthFileConnectionTestResponse>('/auth-files/test', payload, { signal }),\n\n"
+        "    proApiClient.post<AuthFileConnectionTestResponse>('/auth-files/test', payload, { signal }),\n\n"
         "  uploadFiles: async (files: File[]): Promise<AuthFileBatchUploadResult> => {\n",
         "testConnection: (payload: AuthFileConnectionTestRequest, signal?: AbortSignal)",
     )
@@ -2168,6 +2218,7 @@ def main() -> None:
     patch_management_update_check(target)
     patch_management_models(target)
     patch_api_client_connection_isolation(target)
+    patch_api_client_management_namespace(target)
     patch_supporting_api_and_types(target)
     patch_locales(target)
     flush_writes()

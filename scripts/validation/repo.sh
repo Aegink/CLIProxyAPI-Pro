@@ -17,6 +17,7 @@ python3 -m py_compile \
   "${repo_root}/scripts/validation/check_workflow_actions.py" \
   "${repo_root}/scripts/validation/api_key_policy_runtime_smoke.py" \
   "${repo_root}/scripts/validation/run_api_key_policy_binary_smoke.py" \
+  "${repo_root}/scripts/validation/e2e/pro-route-contract/run.py" \
   "${repo_root}/scripts/validation/test_api_key_policy_contract.py" \
   "${repo_root}/scripts/build/create_reproducible_archive.py"
 

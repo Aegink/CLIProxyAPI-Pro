@@ -1,6 +1,6 @@
 import { createSummaryCache } from '../summaryCache';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import { useAuthStore } from '@/stores/useAuthStore';
 import {
   getTimeRangeKey,

@@ -1,4 +1,4 @@
-import { apiClient } from "@/services/api/client";
+import { proApiClient as apiClient } from "@/pro/shared/proManagementTransport";
 import { parsePositiveGoDuration, serializeGoDuration } from '@/pro/shared/duration';
 
 export type OAuthModelPlanKey = string;

@@ -4,7 +4,7 @@ import type {
   GeminiCliQuotaBucketState,
   GeminiCliQuotaState,
 } from '@/types';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import {
   isDisabledAuthFile,
   normalizeNumberValue,

@@ -33,7 +33,7 @@ import { ProFeatureTabs } from '@/pro/shared/ProFeatureTabs';
 import { ProTaskDialog, ProWorkspaceSheet } from '@/pro/shared/ProSurface';
 import configStyles from '@/pro/shared/FloatingActionBar.module.scss';
 import { useAuthStore, useNotificationStore } from '@/stores';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import {
   dataManagementApi,
   type DataCleanupPreview,
@@ -97,6 +97,8 @@ export function DataManagementPage() {
   const pageTransitionLayer = usePageTransitionLayer();
   const isCurrentLayer = pageTransitionLayer ? pageTransitionLayer.isCurrentLayer : true;
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
+  const apiBase = useAuthStore((state) => state.apiBase);
+  const managementKey = useAuthStore((state) => state.managementKey);
   const showNotification = useNotificationStore((state) => state.showNotification);
   const showConfirmation = useNotificationStore((state) => state.showConfirmation);
   const [activeView, setActiveView] = useState<DataManagementView>('overview');
@@ -134,6 +136,48 @@ export function DataManagementPage() {
   const settingsDraftRevisionRef = useRef(0);
   const backupHistorySequenceRef = useRef(0);
   const restorePreviewSequenceRef = useRef(0);
+  const restoreConnectionRevisionRef = useRef<number | null>(null);
+  const restoreAbortRef = useRef<AbortController | null>(null);
+  const restoreActiveRef = useRef(false);
+
+  const cancelRestore = useCallback(() => {
+    restorePreviewSequenceRef.current += 1;
+    restoreConnectionRevisionRef.current = null;
+    restoreAbortRef.current?.abort();
+    restoreAbortRef.current = null;
+    setRestorePreviewOpen(false);
+    setRestorePassphraseDialogOpen(false);
+    setRestorePreview(null);
+    setRestoreBuffer(null);
+    setRestoreWebDAVFileName('');
+    setRestoreFileName('');
+    setRestorePassphrase('');
+    setRestoreBusy(false);
+  }, []);
+
+  useEffect(() => {
+    restoreActiveRef.current = isCurrentLayer && connectionStatus === 'connected';
+    cancelRestore();
+    return () => {
+      restoreActiveRef.current = false;
+      restorePreviewSequenceRef.current += 1;
+      restoreConnectionRevisionRef.current = null;
+      restoreAbortRef.current?.abort();
+    };
+  }, [apiBase, managementKey, connectionStatus, isCurrentLayer, cancelRestore]);
+
+  const isRestoreCurrent = useCallback((sequence = restorePreviewSequenceRef.current) =>
+    restoreActiveRef.current && sequence === restorePreviewSequenceRef.current &&
+    restoreConnectionRevisionRef.current === apiClient.getConnectionRevision() &&
+    restoreAbortRef.current?.signal.aborted === false, []);
+
+  const beginRestore = useCallback(() => {
+    if (!restoreActiveRef.current) return null;
+    cancelRestore();
+    restoreConnectionRevisionRef.current = apiClient.getConnectionRevision();
+    restoreAbortRef.current = new AbortController();
+    return restorePreviewSequenceRef.current;
+  }, [cancelRestore]);
 
   const updateSettingsDraft = useCallback((updater: (current: DataManagementSettingsDraft) => DataManagementSettingsDraft) => {
     settingsDraftRevisionRef.current += 1;
@@ -320,26 +364,28 @@ export function DataManagementPage() {
   }, [dirty, showNotification, t]);
 
   const previewRestoreBuffer = useCallback(async (buffer: ArrayBuffer, passphrase: string, allowLegacy: boolean) => {
+    if (!isRestoreCurrent()) return;
     const sequence = ++restorePreviewSequenceRef.current;
     setRestoreBusy(true);
     try {
-      const preview = await dataManagementApi.previewRestore(buffer, passphrase, allowLegacy);
-      if (sequence !== restorePreviewSequenceRef.current) return;
+      const preview = await dataManagementApi.previewRestore(buffer, passphrase, allowLegacy, restoreAbortRef.current?.signal);
+      if (!isRestoreCurrent(sequence)) return;
       setRestorePreview(preview);
       setRestorePreviewOpen(true);
     } catch (error) {
-      if (sequence !== restorePreviewSequenceRef.current) return;
+      if (!isRestoreCurrent(sequence)) return;
       showNotification(error instanceof Error ? error.message : String(error), 'error');
     } finally {
-      if (sequence === restorePreviewSequenceRef.current) setRestoreBusy(false);
+      if (isRestoreCurrent(sequence)) setRestoreBusy(false);
     }
-  }, [showNotification]);
+  }, [isRestoreCurrent, showNotification]);
 
   const handleRestoreFile = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    const sequence = ++restorePreviewSequenceRef.current;
+    const sequence = beginRestore();
+    if (sequence === null) return;
     setRestoreBusy(true);
     setRestorePreview(null);
     setRestorePreviewOpen(false);
@@ -349,7 +395,7 @@ export function DataManagementPage() {
     setRestorePassphrase('');
     try {
       const buffer = await file.arrayBuffer();
-      if (sequence !== restorePreviewSequenceRef.current) return;
+      if (!isRestoreCurrent(sequence)) return;
       const content = new TextDecoder().decode(buffer);
       const encrypted = isEncryptedDataBackup(content);
       setRestoreFileName(file.name);
@@ -363,15 +409,16 @@ export function DataManagementPage() {
       setRestoreAllowLegacy(allowLegacy);
       await previewRestoreBuffer(buffer, '', allowLegacy);
     } catch (error) {
-      if (sequence !== restorePreviewSequenceRef.current) return;
+      if (!isRestoreCurrent(sequence)) return;
       showNotification(error instanceof Error ? error.message : String(error), 'error');
     } finally {
-      if (sequence === restorePreviewSequenceRef.current) setRestoreBusy(false);
+      if (isRestoreCurrent(sequence)) setRestoreBusy(false);
     }
-  }, [previewRestoreBuffer, showNotification]);
+  }, [beginRestore, isRestoreCurrent, previewRestoreBuffer, showNotification]);
 
   const previewWebDAVRestore = useCallback(async (backup: WebDAVBackup) => {
-    const sequence = ++restorePreviewSequenceRef.current;
+    const sequence = beginRestore();
+    if (sequence === null) return;
     setRestoreBusy(true);
     setRestorePreview(null);
     setRestorePreviewOpen(false);
@@ -382,53 +429,52 @@ export function DataManagementPage() {
     setRestoreEncrypted(false);
     setRestorePassphrase('');
     try {
-      const preview = await dataManagementApi.previewWebDAVRestore(backup.fileName);
-      if (sequence !== restorePreviewSequenceRef.current) return;
+      const preview = await dataManagementApi.previewWebDAVRestore(backup.fileName, restoreAbortRef.current?.signal);
+      if (!isRestoreCurrent(sequence)) return;
       setRestoreAllowLegacy(preview.legacyBackup);
       setRestorePreview(preview);
       setRestorePreviewOpen(true);
     } catch (error) {
-      if (sequence !== restorePreviewSequenceRef.current) return;
+      if (!isRestoreCurrent(sequence)) return;
       showNotification(error instanceof Error ? error.message : String(error), 'error');
     } finally {
-      if (sequence === restorePreviewSequenceRef.current) setRestoreBusy(false);
+      if (isRestoreCurrent(sequence)) setRestoreBusy(false);
     }
-  }, [showNotification]);
+  }, [beginRestore, isRestoreCurrent, showNotification]);
 
   const previewEncryptedRestore = useCallback(async () => {
-    if (!restoreBuffer) return;
+    if (!restoreBuffer || !isRestoreCurrent()) return;
     setRestorePassphraseDialogOpen(false);
     setRestoreAllowLegacy(false);
     await previewRestoreBuffer(restoreBuffer, restorePassphrase, false);
-  }, [previewRestoreBuffer, restoreBuffer, restorePassphrase]);
+  }, [isRestoreCurrent, previewRestoreBuffer, restoreBuffer, restorePassphrase]);
 
   const executeRestore = useCallback(async () => {
-    if (!restorePreview || (!restoreBuffer && !restoreWebDAVFileName)) return;
+    if (!restorePreview || (!restoreBuffer && !restoreWebDAVFileName) || !isRestoreCurrent()) return;
+    const sequence = restorePreviewSequenceRef.current;
     setRestoreBusy(true);
     try {
       if (restoreWebDAVFileName) {
         await dataManagementApi.restoreWebDAV(
           restoreWebDAVFileName,
           restoreAllowLegacy,
-          restorePreview?.backupSha256 ?? ''
+          restorePreview?.backupSha256 ?? '',
+          restoreAbortRef.current?.signal
         );
       } else if (restoreBuffer) {
-        await dataManagementApi.restore(restoreBuffer, restoreEncrypted ? restorePassphrase : '', restoreAllowLegacy);
+        await dataManagementApi.restore(restoreBuffer, restoreEncrypted ? restorePassphrase : '', restoreAllowLegacy, restoreAbortRef.current?.signal);
       }
-      setRestorePreviewOpen(false);
-      setRestorePreview(null);
-      setRestoreBuffer(null);
-      setRestoreWebDAVFileName('');
-      setRestoreFileName('');
-      setRestorePassphrase('');
+      if (!isRestoreCurrent(sequence)) return;
+      cancelRestore();
       showNotification(t('data_management.restore_success', { defaultValue: 'Pro backup restored' }), 'success');
       await Promise.all([loadCore(true), loadBackupHistory()]);
     } catch (error) {
+      if (!isRestoreCurrent(sequence)) return;
       showNotification(error instanceof Error ? error.message : String(error), 'error');
     } finally {
-      setRestoreBusy(false);
+      if (isRestoreCurrent(sequence)) setRestoreBusy(false);
     }
-  }, [loadBackupHistory, loadCore, restoreAllowLegacy, restoreBuffer, restoreEncrypted, restorePassphrase, restorePreview, restoreWebDAVFileName, showNotification, t]);
+  }, [cancelRestore, isRestoreCurrent, loadBackupHistory, loadCore, restoreAllowLegacy, restoreBuffer, restoreEncrypted, restorePassphrase, restorePreview, restoreWebDAVFileName, showNotification, t]);
 
   const previewCleanup = useCallback(async () => {
     setCleanupBusy(true);
@@ -733,11 +779,11 @@ export function DataManagementPage() {
         <div className={styles.dialogBody}><div className={styles.securityNotice}><IconShield size={17} /><span>{t('data_management.encryption_notice', { defaultValue: 'The passphrase is never stored. Losing it makes the backup unrecoverable.' })}</span></div><label><span>{t('data_management.passphrase', { defaultValue: 'Passphrase' })}</span><Input type="password" value={encryptionPassphrase} onChange={(event) => setEncryptionPassphrase(event.target.value)} autoComplete="new-password" /></label><label><span>{t('data_management.passphrase_confirm', { defaultValue: 'Confirm passphrase' })}</span><Input type="password" value={encryptionPassphraseConfirm} onChange={(event) => setEncryptionPassphraseConfirm(event.target.value)} autoComplete="new-password" /></label></div>
       </ProTaskDialog>
 
-      <ProTaskDialog open={restorePassphraseDialogOpen} title={t('data_management.unlock_backup', { defaultValue: 'Unlock encrypted backup' })} onClose={() => setRestorePassphraseDialogOpen(false)} footer={<><Button variant="secondary" onClick={() => setRestorePassphraseDialogOpen(false)}>{t('common.cancel')}</Button><Button variant="primary" onClick={() => void previewEncryptedRestore()} disabled={!restorePassphrase || restoreBusy}>{restoreBusy ? t('common.loading') : t('data_management.unlock_and_preview', { defaultValue: 'Unlock and preview' })}</Button></>}>
+      <ProTaskDialog open={restorePassphraseDialogOpen} title={t('data_management.unlock_backup', { defaultValue: 'Unlock encrypted backup' })} onClose={cancelRestore} footer={<><Button variant="secondary" onClick={cancelRestore}>{t('common.cancel')}</Button><Button variant="primary" onClick={() => void previewEncryptedRestore()} disabled={!restorePassphrase || restoreBusy}>{restoreBusy ? t('common.loading') : t('data_management.unlock_and_preview', { defaultValue: 'Unlock and preview' })}</Button></>}>
         <div className={styles.dialogBody}><p>{restoreFileName}</p><label><span>{t('data_management.passphrase', { defaultValue: 'Passphrase' })}</span><Input type="password" value={restorePassphrase} onChange={(event) => setRestorePassphrase(event.target.value)} autoComplete="current-password" /></label></div>
       </ProTaskDialog>
 
-      <ProWorkspaceSheet open={restorePreviewOpen} onClose={() => !restoreBusy && setRestorePreviewOpen(false)} title={t('data_management.restore_preview_title', { defaultValue: 'Review backup restore' })} description={restoreFileName} closeDisabled={restoreBusy} footer={<div className={styles.sheetFooter}><Button variant="secondary" onClick={() => setRestorePreviewOpen(false)} disabled={restoreBusy}>{t('common.cancel')}</Button><Button variant={restorePreview?.legacyBackup || hasKeyStateRestoreChanges(restorePreview?.policyBackup) ? 'danger' : 'primary'} onClick={() => void executeRestore()} loading={restoreBusy}>{hasKeyStateRestoreChanges(restorePreview?.policyBackup) ? t('data_management.restore_confirm_key_states') : t('data_management.restore_confirm', { defaultValue: 'Restore backup' })}</Button></div>}>
+      <ProWorkspaceSheet open={restorePreviewOpen} onClose={() => !restoreBusy && cancelRestore()} title={t('data_management.restore_preview_title', { defaultValue: 'Review backup restore' })} description={restoreFileName} closeDisabled={restoreBusy} footer={<div className={styles.sheetFooter}><Button variant="secondary" onClick={cancelRestore} disabled={restoreBusy}>{t('common.cancel')}</Button><Button variant={restorePreview?.legacyBackup || hasKeyStateRestoreChanges(restorePreview?.policyBackup) ? 'danger' : 'primary'} onClick={() => void executeRestore()} loading={restoreBusy}>{hasKeyStateRestoreChanges(restorePreview?.policyBackup) ? t('data_management.restore_confirm_key_states') : t('data_management.restore_confirm', { defaultValue: 'Restore backup' })}</Button></div>}>
         <div className={styles.restorePreview}>
           <div className={restorePreview?.integrityProtected ? styles.integrityGood : styles.integrityWarning}>{restorePreview?.integrityProtected ? <IconCheckCircle2 size={17} /> : <IconAlertTriangle size={17} />}<span>{restorePreview?.integrityProtected ? t('data_management.integrity_verified', { defaultValue: 'Backup manifest and content hash verified' }) : t('data_management.legacy_warning', { defaultValue: 'Legacy backup without an integrity manifest. Continue only if the source is trusted.' })}</span></div>
           {restorePreview?.encrypted ? <div className={styles.integrityGood}><IconShield size={17} /><span>{t('data_management.encrypted_verified', { defaultValue: 'AES-256-GCM authentication succeeded' })}</span></div> : null}

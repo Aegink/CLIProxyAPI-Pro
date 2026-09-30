@@ -110,7 +110,9 @@ class MonitoringToolbarCustomizationTest(unittest.TestCase):
         self.assertIn('settingsDraftRevisionRef.current += 1;', source)
         self.assertIn('draftRevision === settingsDraftRevisionRef.current', source)
         self.assertIn('submittedRevision === settingsDraftRevisionRef.current', source)
-        self.assertIn('if (sequence !== restorePreviewSequenceRef.current) return;', source)
+        self.assertIn('if (!isRestoreCurrent(sequence)) return;', source)
+        self.assertIn('sequence === restorePreviewSequenceRef.current', source)
+        self.assertIn('restoreConnectionRevisionRef.current === apiClient.getConnectionRevision()', source)
 
     def test_realtime_logs_pause_auto_refresh_during_browsing(self) -> None:
         source = PAGE_PATH.read_text()

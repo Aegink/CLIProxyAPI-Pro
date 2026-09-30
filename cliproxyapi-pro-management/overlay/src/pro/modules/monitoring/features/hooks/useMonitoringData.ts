@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authFilesApi } from '@/services/api/authFiles';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import { useAuthStore } from '@/stores/useAuthStore';
 import type { AuthFileItem } from '@/types/authFile';
 import type { Config } from '@/types/config';

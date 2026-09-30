@@ -1,4 +1,4 @@
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 
 export interface ManagementUpdateResult {
   status: string;

@@ -121,7 +121,7 @@ import {
 import { ProDetailDialog } from '@/pro/shared/ProSurface';
 import { useProSurfaceState } from '@/pro/shared/useProSurfaceState';
 import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
-import { apiClient } from '@/services/api/client';
+import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import { useAuthStore, useConfigStore, useNotificationStore, useQuotaStore } from '@/stores';
 import type { AuthFileItem } from '@/types';
 import { maskSensitiveText } from '@/utils/format';
