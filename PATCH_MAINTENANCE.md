@@ -95,3 +95,11 @@ Core 的 13 处代理/transport 整函数替换改为局部锚点，仅修改有
 WebSocket 与 WebRTC sideband 共享同包 `realtime_usage_pro.go` 的终态识别、Codex/OpenAI usage fallback、total fallback 和 quota delta 转换。active turn 清空、response/payload event ID、重复事件处理、准入与结算失败处理仍由原 relay 负责；WS 的取消上下文与 sideband 的 `WithoutCancel` 不合并。空 usage 在两条 relay 的既有不同处理也保留。
 
 本批 Core 原生修改文件仍为 97，Management 保持 37。代理部分整函数替换由 13 降至 0，生成器嵌入的替换 Go 文本由 539 降至 260 行；局部替换由 9 增至 36、旧锚点文本由 44 增至 191 行。收益是上游主体可以自然跟随，代价是仍须维护必要局部锚点；不以预设文件数下降替代语义验证。新增七份源码均登记碰撞检查、queue 与 gofmt。退出条件仍是上游提供等价的运行时代理与持久化结算边界。
+
+### 持续发布验收
+
+增量 CI 的成功检查点使用显式取消状态条件，避免可选验证任务跳过后连带跳过 `validation-state`；summary 失败、取消或手动全量运行不写入检查点。
+
+Core 发布复用本次 Linux amd64 发布 archive，运行既有配置、流式用量及真实前端路由/SQLite 重启 E2E。配额 provider E2E 使用同一精确 Core、Pro 和 models 输入构建的独立进程 fixture；其哈希与输入另存，不把它当作产品可执行文件。新面板再与冻结的当前已发布 Core 配对；两个二进制哈希相同则只运行一组，没有已发布版本时仅验证候选。Management 单独发布必须与目标 Release 的实际二进制配对，不重编一个新 Core 替代。
+
+配对最多包含候选和当前发布两组，不重建历史 Core、不重复前端完整测试与构建。下载核验 archive checksum 和可用的 GitHub asset digest；GitHub API 错误不能被当作首发。所有 E2E 成功后才上传供发布消费的面板产物，失败回执与日志独立归档。门禁范围是本地真实 HTTP、TypeScript transport 和 SQLite；浏览器渲染、外部供应商及插件 ABI 保留各自验证边界。

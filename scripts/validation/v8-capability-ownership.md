@@ -17,9 +17,10 @@ The surface manifests list modified upstream files, not all added Pro sources.
 
 ## Retired replacements
 
-The generator no longer inserts upstream-owned Claude `message.usage` parsing or
-`UsageReporter.PublishFailureWithDetail`, and no longer replaces
-`StreamUsageBuffer.PublishFailure`. The native function preserves the buffered
+The generator no longer reimplements upstream-owned Claude `message.usage`
+parsing or `UsageReporter.PublishFailureWithDetail`, and no longer replaces
+`StreamUsageBuffer.PublishFailure`. Pro failure branches still call these native
+helpers when needed. The native function preserves the buffered
 response model and publishes failures even before token usage is available.
 
 The existing isolated helper regression was updated before the replacement was

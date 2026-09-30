@@ -346,6 +346,32 @@ run_inspection_e2e() {
     python3 "${repo_root}/cliproxyapi-pro-core/e2e/account-inspection-batch-history/run.py" --ci-fast
 }
 
+build_release_quota_fixture() {
+  local fixture_source="${upstream_root}/cmd/quota-http-fixture"
+  mkdir -p "${fixture_source}" || return
+  cp "${repo_root}/scripts/validation/e2e/v8-quota-http/main.go" "${fixture_source}/main.go" || return
+  CGO_ENABLED=1 go -C "${upstream_root}" build -buildvcs=false \
+    -o "${validation_tmp}/quota-http-fixture" ./cmd/quota-http-fixture || return
+  python3 - "${validation_tmp}/quota-http-fixture" "${upstream_commit}" "${repo_root}" <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+binary = Path(sys.argv[1])
+receipt = {
+    "kind": "quota HTTP process fixture; not the product executable",
+    "binarySha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+    "coreUpstreamSHA": sys.argv[2],
+    "customizationSHA": subprocess.check_output(["git", "-C", sys.argv[3], "rev-parse", "HEAD"], text=True).strip(),
+    "modelsSHA": os.environ.get("MODELS_SHA"),
+}
+binary.with_name("quota-fixture-inputs.json").write_text(json.dumps(receipt, indent=2) + "\n")
+PY
+}
+
 run_timed "patch preflight guard" validate_late_patch_guard
 run_timed "apply customization and dependencies" apply_candidate_customization
 if [[ "${VALIDATION_STATICCHECK:-0}" == "1" ]]; then
@@ -381,6 +407,9 @@ else
 fi
 
 run_timed "CGO and non-CGO builds" build_candidate
+if [[ "${VALIDATION_RELEASE_HTTP_GATES:-0}" == "1" ]]; then
+  run_timed "retain release quota HTTP fixture" build_release_quota_fixture
+fi
 if [[ "${VALIDATION_INSPECTION_E2E:-0}" == "1" ]]; then
   run_timed "inspection batch and internal audit HTTP E2E" run_inspection_e2e
 fi

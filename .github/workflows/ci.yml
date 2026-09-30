@@ -542,7 +542,7 @@ jobs:
       - resolve-upstream
       - classify-changes
       - validation-summary
-    if: needs.validation-summary.result == 'success' && github.event_name != 'workflow_dispatch'
+    if: ${{ !cancelled() && needs.validation-summary.result == 'success' && github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
 
     steps:

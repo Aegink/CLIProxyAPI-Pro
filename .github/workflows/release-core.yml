@@ -32,6 +32,7 @@ jobs:
       management_sha: ${{ steps.compare.outputs.management_sha }}
       management_version: ${{ steps.compare.outputs.management_version }}
       models_sha: ${{ steps.compare.outputs.models_sha }}
+      current_release_tag: ${{ steps.compare.outputs.current_release_tag }}
 
     steps:
       - name: Compare latest core release
@@ -69,7 +70,17 @@ jobs:
           models_sha="$(gh api "repos/${MODELS_REPO}/commits/main" --jq '.sha')"
           core_sha="$(gh api "repos/${CORE_UPSTREAM_REPO}/commits/${core_tag}" --jq '.sha')"
           management_sha="$(gh api "repos/${MANAGEMENT_UPSTREAM_REPO}/commits/${management_tag}" --jq '.sha')"
-          current_tag="$(gh release view --repo "${CURRENT_REPO}" --json tagName --jq '.tagName' 2>/dev/null || true)"
+          latest_error="$(mktemp)"
+          if current_tag="$(gh api "repos/${CURRENT_REPO}/releases/latest" --jq '.tag_name' 2>"${latest_error}")"; then
+            test -n "${current_tag}"
+          elif grep -Fq '(HTTP 404)' "${latest_error}"; then
+            current_tag=""
+          else
+            cat "${latest_error}" >&2
+            rm -f "${latest_error}"
+            exit 1
+          fi
+          rm -f "${latest_error}"
 
           core_version="$(normalize_version "${core_tag}")"
           management_version="$(normalize_version "${management_tag}")"
@@ -117,6 +128,7 @@ jobs:
           echo "management_sha=${management_sha}" >> "${GITHUB_OUTPUT}"
           echo "management_version=${management_version}" >> "${GITHUB_OUTPUT}"
           echo "models_sha=${models_sha}" >> "${GITHUB_OUTPUT}"
+          echo "current_release_tag=${current_tag}" >> "${GITHUB_OUTPUT}"
           echo "should_release=${should_release}" >> "${GITHUB_OUTPUT}"
 
   validate-repository:
@@ -198,6 +210,7 @@ jobs:
         env:
           MODELS_SHA: ${{ needs.check-version.outputs.models_sha }}
           VALIDATION_ARTIFACT_DIR: ${{ runner.temp }}/core-validation-artifacts
+          VALIDATION_RELEASE_HTTP_GATES: "1"
         run: |
           set -euo pipefail
           test "$(git -C upstream-models rev-parse HEAD)" = "${MODELS_SHA}"
@@ -215,7 +228,10 @@ jobs:
           retention-days: 7
 
   validate-management:
-    needs: check-version
+    needs:
+      - check-version
+      - validate-core
+      - build-core-linux
     if: needs.check-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -241,6 +257,23 @@ jobs:
         with:
           bun-version-file: upstream-management/package.json
 
+      - name: Set up Python for release HTTP E2E
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.x'
+
+      - name: Download actual Linux candidate Core archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: core-release-assets-linux-amd64
+          path: release-gate-core
+
+      - name: Download separately identified quota process fixture
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: core-release-validation-diagnostics
+          path: release-gate-fixture
+
       - name: Cache Bun dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -253,6 +286,34 @@ jobs:
         env:
           VERSION: v${{ needs.check-version.outputs.management_version }}-pro
         run: bash customizations-repo/scripts/validation/management.sh upstream-management
+
+      - name: Run release HTTP contracts on candidate and current published Core
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_REPO: ${{ github.repository }}
+          CUSTOMIZATION_SHA: ${{ github.sha }}
+          CORE_SHA: ${{ needs.check-version.outputs.core_sha }}
+          MODELS_SHA: ${{ needs.check-version.outputs.models_sha }}
+          MANAGEMENT_SHA: ${{ needs.check-version.outputs.management_sha }}
+          CORE_CANDIDATE_TAG: ${{ needs.check-version.outputs.release_tag }}
+          CORE_CANDIDATE_ARCHIVE: release-gate-core/CLIProxyAPI_${{ needs.check-version.outputs.release_version }}_linux_amd64.tar.gz
+          CORE_QUOTA_FIXTURE: release-gate-fixture/quota-http-fixture
+          CORE_PUBLISHED_TAG: ${{ needs.check-version.outputs.current_release_tag }}
+        run: |
+          set -euo pipefail
+          chmod +x release-gate-fixture/quota-http-fixture
+          python3 customizations-repo/scripts/validation/release_http_gates.py \
+            --management upstream-management \
+            --output "${RUNNER_TEMP}/release-http-gates"
+
+      - name: Upload release HTTP contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: core-management-release-http-diagnostics
+          path: ${{ runner.temp }}/release-http-gates
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Prepare validated management asset
         working-directory: upstream-management

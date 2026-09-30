@@ -24,6 +24,13 @@ class ValidateWorkflowTests(unittest.TestCase):
         self.assertIn("validation-summary:", workflow)
         self.assertIn("record-validation-state:", workflow)
         self.assertIn("name: validation-state", workflow)
+        state_job = workflow[workflow.index("  record-validation-state:"):]
+        state_condition = next(line.strip() for line in state_job.splitlines() if line.strip().startswith("if:"))
+        # A skipped optional ancestor must not suppress a successful checkpoint.
+        # Explicit cancellation status also prevents recording a cancelled run.
+        self.assertIn("!cancelled()", state_condition)
+        self.assertIn("needs.validation-summary.result == 'success'", state_condition)
+        self.assertIn("github.event_name != 'workflow_dispatch'", state_condition)
         self.assertIn(
             "cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}",
             workflow,

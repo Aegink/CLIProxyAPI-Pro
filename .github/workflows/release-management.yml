@@ -50,7 +50,17 @@ jobs:
             [ "$(printf '%s\n%s\n' "${right}" "${left}" | sort -V | tail -n 1)" = "${left}" ] && [ "${left}" != "${right}" ]
           }
 
-          target_release_tag="$(gh release view --repo "${CURRENT_REPO}" --json tagName --jq '.tagName' 2>/dev/null || true)"
+          latest_error="$(mktemp)"
+          if target_release_tag="$(gh api "repos/${CURRENT_REPO}/releases/latest" --jq '.tag_name' 2>"${latest_error}")"; then
+            test -n "${target_release_tag}"
+          elif grep -Fq '(HTTP 404)' "${latest_error}"; then
+            target_release_tag=""
+          else
+            cat "${latest_error}" >&2
+            rm -f "${latest_error}"
+            exit 1
+          fi
+          rm -f "${latest_error}"
           upstream_tag="$(gh release view --repo "${UPSTREAM_REPO}" --json tagName --jq '.tagName')"
 
           if [ -z "${upstream_tag}" ]; then
@@ -171,6 +181,11 @@ jobs:
         with:
           bun-version-file: upstream/package.json
 
+      - name: Set up Python for release HTTP E2E
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.x'
+
       - name: Cache Bun dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -183,6 +198,27 @@ jobs:
         env:
           VERSION: ${{ needs.check-version.outputs.build_version }}
         run: bash customizations-repo/scripts/validation/management.sh upstream
+
+      - name: Run generated Management against exact target release Core
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_REPO: ${{ github.repository }}
+          CUSTOMIZATION_SHA: ${{ github.sha }}
+          MANAGEMENT_SHA: ${{ needs.check-version.outputs.upstream_sha }}
+          CORE_PUBLISHED_TAG: ${{ needs.check-version.outputs.target_release_tag }}
+        run: |
+          python3 customizations-repo/scripts/validation/release_http_gates.py \
+            --management upstream \
+            --output "${RUNNER_TEMP}/release-http-gates"
+
+      - name: Upload release HTTP contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: management-release-http-diagnostics
+          path: ${{ runner.temp }}/release-http-gates
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Prepare validated management asset
         working-directory: upstream
