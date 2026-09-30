@@ -1,5 +1,5 @@
 # Latest-only baseline: Management v1.25.0 (b87b9487f63e08ad97b1fb4e7c17b4adb811b922).
-# Update this reviewed surface only when adapting to a newer latest upstream release.
+# Update this reviewed surface when adapting upstream or reducing native-file patches.
 src/App.tsx
 src/components/common/ConfirmationModal.tsx
 src/components/layout/MainLayout.tsx
@@ -34,7 +34,6 @@ src/stores/useNotificationStore.ts
 src/stores/useQuotaStore.ts
 src/types/authFile.ts
 src/types/quota.ts
-src/utils/format.ts
 src/utils/quota/builders.ts
 src/utils/quota/constants.ts
 src/utils/quota/resolvers.ts

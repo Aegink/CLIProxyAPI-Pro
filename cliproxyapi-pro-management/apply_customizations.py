@@ -1147,18 +1147,6 @@ def patch_api_client_connection_isolation(target: Path) -> None:
         "    );\n",
     )
 
-    auth_store = target / 'src/stores/useAuthStore.ts'
-    replace_once(
-        auth_store,
-        "        useQuotaStore.getState().clearQuotaCache();\n"
-        "        set({\n"
-        "          isAuthenticated: false,\n",
-        "        useQuotaStore.getState().clearQuotaCache();\n"
-        "        apiClient.setConfig({ apiBase: '', managementKey: '' });\n"
-        "        set({\n"
-        "          isAuthenticated: false,\n",
-    )
-
 
 def patch_api_client_management_namespace(target: Path) -> None:
     path = target / 'src/services/api/client.ts'
@@ -1668,6 +1656,20 @@ def patch_supporting_api_and_types(target: Path) -> None:
     )
     replace_once(
         auth_files_path,
+        "  resetCooldown: (authIndex: string) =>\n"
+        "    apiClient.post<AuthFileCooldownResetResponse>('/routing/cooldown/reset', {\n"
+        "      auth_index: authIndex,\n"
+        "    }),\n",
+        "  resetCooldown: async (authIndex: string) => {\n"
+        "    const response = await apiClient.post<AuthFileCooldownResetResponse>('/routing/cooldown/reset', {\n"
+        "      auth_index: authIndex,\n"
+        "    });\n"
+        "    invalidateAuthFilesListCache();\n"
+        "    return response;\n"
+        "  },\n",
+    )
+    replace_once(
+        auth_files_path,
         "    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/credentials', formData);\n    return normalizeBatchUploadResponse(payload, requestedNames);\n",
         "    const payload = await apiClient.postForm<AuthFileBatchUploadResponse>('/credentials', formData);\n    invalidateAuthFilesListCache();\n    return normalizeBatchUploadResponse(payload, requestedNames);\n",
     )
@@ -1686,14 +1688,6 @@ def patch_supporting_api_and_types(target: Path) -> None:
         auth_files_path,
         "      ...(authIndex ? { auth_index: authIndex } : {}),\n    });\n",
         "      ...(authIndex ? { auth_index: authIndex } : {}),\n    });\n    invalidateAuthFilesListCache();\n",
-    )
-
-    format_path = target / 'src/utils/format.ts'
-    insert_once(
-        format_path,
-        "/**\n * 格式化文件大小\n */",
-        "const API_KEY_MASK_REGEX =\n  /(sk-[A-Za-z0-9-_]{6,}|sk-ant-[A-Za-z0-9-_]{6,}|AIza[0-9A-Za-z-_]{8,}|AI[a-zA-Z0-9_-]{6,}|hf_[A-Za-z0-9]{6,}|pk_[A-Za-z0-9]{6,}|rk_[A-Za-z0-9]{6,})/g;\n\nexport function maskSensitiveText(value: string): string {\n  const trimmed = String(value || '').trim();\n  if (!trimmed) {\n    return '';\n  }\n\n  return trimmed.replace(API_KEY_MASK_REGEX, (match) => maskApiKey(match));\n}\n\n/**\n * 格式化文件大小\n */",
-        "export function maskSensitiveText(value: string): string",
     )
 
     select_path = target / 'src/components/ui/Select.tsx'
@@ -1841,12 +1835,6 @@ def _ensure_interface_field(path: Path, interface_name: str, field: str) -> None
 
 def patch_quota_types_latest(target: Path) -> None:
     path = target / 'src/types/quota.ts'
-    insert_once(
-        path,
-        '// API payload types\n',
-        "// API payload types\nexport interface GeminiCliQuotaBucket {\n  modelId?: string;\n  model_id?: string;\n  tokenType?: string;\n  token_type?: string;\n  remainingFraction?: number | string;\n  remaining_fraction?: number | string;\n  remainingAmount?: number | string;\n  remaining_amount?: number | string;\n  resetTime?: string;\n  reset_time?: string;\n}\n\nexport interface GeminiCliQuotaPayload {\n  buckets?: GeminiCliQuotaBucket[];\n}\n\nexport interface GeminiCliParsedBucket {\n  modelId: string;\n  tokenType: string | null;\n  remainingFraction: number | null;\n  remainingAmount: number | null;\n  resetTime: string | undefined;\n}\n\n",
-        'export interface GeminiCliQuotaBucket',
-    )
     insert_once(
         path,
         'export interface CodexQuotaWindow',

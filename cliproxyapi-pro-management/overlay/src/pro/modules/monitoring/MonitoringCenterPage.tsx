@@ -124,7 +124,7 @@ import { useHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { proApiClient as apiClient } from '@/pro/shared/proManagementTransport';
 import { useAuthStore, useConfigStore, useNotificationStore, useQuotaStore } from '@/stores';
 import type { AuthFileItem } from '@/types';
-import { maskSensitiveText } from '@/utils/format';
+import { maskSensitiveText } from '@/pro/shared/maskSensitiveText';
 import {
   deleteModelPriceRule,
   formatCompactNumber,

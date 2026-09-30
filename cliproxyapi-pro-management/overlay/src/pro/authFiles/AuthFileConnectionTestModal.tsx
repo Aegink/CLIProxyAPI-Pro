@@ -6,7 +6,7 @@ import { Select } from '@/components/ui/Select';
 import { IconCheckCircle2, IconNetwork, IconAlertTriangle } from '@/components/ui/icons';
 import { authFilesApi, type AuthFileConnectionTestResponse } from '@/services/api/authFiles';
 import type { AuthFileItem } from '@/types';
-import { maskSensitiveText } from '@/utils/format';
+import { maskSensitiveText } from '@/pro/shared/maskSensitiveText';
 import { getErrorMessage } from '@/utils/helpers';
 import { ProTaskDialog } from '@/pro/shared/ProSurface';
 import styles from './AuthFileConnectionTestModal.module.scss';

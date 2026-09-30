@@ -70,3 +70,11 @@ prefixes and accepting bare, v0-suffixed, or v8-suffixed server addresses.
 Route regression tests must exercise the real HTTP transport, not only mocked
 apiClient methods. The release contract harness additionally checks the existing
 Core binary and quota persistence across a process restart.
+
+### 第一批补丁收敛
+
+Core v8.0.4 上的纯新增声明保留在原 Go 包的 Pro 文件中：插件自动安装配置访问器、布尔标量保存辅助函数、LRU `Purge` 和插件 executor provider 查询。保留原签名、私有字段访问及锁/回调语义，不增加包装层。`config_yaml.go`、`config_normalization.go`、`bounded_lru.go`、`executor_route.go` 恢复为原生文件；布尔保存函数直接生成最终实现，删除先插入再替换的流程。原生修改文件数由 101 降至 97。
+
+Management v1.25.0 的 `maskSensitiveText` 进入 `pro/shared`，继续复用原生 `maskApiKey`，脱敏规则不变；`utils/format.ts` 恢复为原生文件，原生修改文件数由 41 降至 40。登出复用上游已有连接清空，保留 Pro 请求取消和缓存清理；移除未使用的旧 Gemini payload 类型，保留实际配额状态类型。此前 cooldown 成功后刷新凭据缓存的修复继续保留。
+
+本批仅调整声明归属和清理冗余。凭据 TTL 缓存、Pro API 提取、配额时间戳和共享 transport 进一步收敛需要单独的行为验证，不在本批扩大改动。

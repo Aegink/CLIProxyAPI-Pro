@@ -100,3 +100,9 @@ func existingMapPathValue(root *yaml.Node, path []string) *yaml.Node {
 	}
 	return current
 }
+
+// SaveConfigPreserveCommentsUpdateNestedBoolScalar updates an existing bool scalar without creating missing keys.
+func SaveConfigPreserveCommentsUpdateNestedBoolScalar(configFile string, path []string, value bool) error {
+	_, err := SaveConfigPreserveCommentsUpdateExistingScalars(configFile, []ExistingScalarUpdate{{Path: path, Value: value}})
+	return err
+}

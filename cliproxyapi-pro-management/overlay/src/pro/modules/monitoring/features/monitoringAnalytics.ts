@@ -19,7 +19,7 @@ import {
   projectMonitoringAccountRow,
   type MonitoringAccountRowAccumulator,
 } from './accountRowProjection';
-import { maskSensitiveText } from '@/utils/format';
+import { maskSensitiveText } from '@/pro/shared/maskSensitiveText';
 import { formatCompactNumber, formatUsd, type ModelPrice } from '@/pro/modules/monitoring/features/usage';
 
 export const formatPercent = (value: number) => `${(value * 100).toFixed(1)}%`;

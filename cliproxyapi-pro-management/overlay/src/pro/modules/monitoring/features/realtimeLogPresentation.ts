@@ -1,6 +1,6 @@
 import { modelAuditItems } from './modelAudit';
 import type { TFunction } from 'i18next';
-import { maskSensitiveText } from '@/utils/format';
+import { maskSensitiveText } from '@/pro/shared/maskSensitiveText';
 import type { MonitoringEventRow } from './hooks/useMonitoringData';
 
 export type RealtimeLogRow = MonitoringEventRow & {

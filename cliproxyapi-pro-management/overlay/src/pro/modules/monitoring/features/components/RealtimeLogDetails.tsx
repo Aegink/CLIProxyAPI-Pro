@@ -11,7 +11,7 @@ import {
   translateRealtimeErrorText,
   type RealtimeLogRow,
 } from '../realtimeLogPresentation';
-import { maskSensitiveText } from '@/utils/format';
+import { maskSensitiveText } from '@/pro/shared/maskSensitiveText';
 import { ProInformationDetails, type ProInformationDetailsTone } from '@/pro/shared/ProInformationDetails';
 import styles from '../monitoring.module.scss';
 

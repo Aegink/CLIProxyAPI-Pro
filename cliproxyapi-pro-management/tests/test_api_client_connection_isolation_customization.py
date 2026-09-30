@@ -25,6 +25,8 @@ class ApiClientConnectionIsolationCustomizationTests(unittest.TestCase):
         auth_store = root / 'src/stores/useAuthStore.ts'
         auth_store.parent.mkdir(parents=True)
         auth_store.write_text("""logout: () => {
+        restoreSessionPromise = null;
+        apiClient.setConfig({ apiBase: '', managementKey: '' });
         useQuotaStore.getState().clearQuotaCache();
         set({
           isAuthenticated: false,
@@ -43,7 +45,7 @@ class ApiClientConnectionIsolationCustomizationTests(unittest.TestCase):
         self.assertEqual(auth_store.read_text(), first_store)
         return first_client, first_store
 
-    def test_patches_latest_generation_guard_and_logout_client_clear(self):
+    def test_patches_latest_generation_guard_and_preserves_native_logout_reset(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             upstream_client = """import axios, { AxiosRequestConfig } from 'axios';
@@ -92,7 +94,7 @@ class ApiClient {
             self.assertIn('config.signal = this.combineRequestSignal(config.signal);', first_client)
             self.assertIn('__connectionGeneration = this.connectionGeneration;', first_client)
             self.assertIn('this.isStaleConnection(response.config)', first_client)
-            self.assertIn("apiClient.setConfig({ apiBase: '', managementKey: '' });", first_store)
+            self.assertEqual(first_store.count("apiClient.setConfig({ apiBase: '', managementKey: '' });"), 1)
 
     def test_rejects_legacy_runtime_aware_connection_change(self):
         with tempfile.TemporaryDirectory() as tmp:

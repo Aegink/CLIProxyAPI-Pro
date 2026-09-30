@@ -252,8 +252,11 @@ new_customization_paths = (
     'internal/api/handlers/management/pro_management_runtime.go',
     'internal/api/handlers/management/routing_policy.go',
     'internal/api/handlers/management/routing_policy_test.go',
+    'internal/cache/bounded_lru_pro.go',
     'internal/config/config_existing_updates.go',
     'internal/config/config_existing_updates_test.go',
+    'internal/config/pro_plugin_autoinstall.go',
+    'internal/pluginhost/pro_executor_provider.go',
     'internal/pluginhost/gemini_cli_quota_legacy.go',
     'internal/pluginhost/gemini_cli_quota_legacy_test.go',
     'internal/pluginhost/gemini_cli_storage_compat.go',
@@ -324,6 +327,9 @@ for relative_path in new_customization_paths:
 
 queue_tree(PATCH_SOURCE_DIR / 'internal/pro', ROOT / 'internal/pro')
 queue_tree(PATCH_SOURCE_DIR / 'sdk/proxyutil', ROOT / 'sdk/proxyutil')
+queue_go_source('internal/config/pro_plugin_autoinstall.go')
+queue_go_source('internal/cache/bounded_lru_pro.go')
+queue_go_source('internal/pluginhost/pro_executor_provider.go')
 queue_go_source('internal/api/api_key_policy_middleware_test.go')
 queue_go_source('internal/api/self_query.go')
 queue_go_source('internal/api/self_query_test.go')
@@ -905,35 +911,6 @@ replace_go_function(
 }
 ''',
     'runtimeProxyRoundTripperKey{effective:',
-)
-
-bounded_lru = ROOT / 'internal/cache/bounded_lru.go'
-insert_before(
-    bounded_lru,
-    'func (cache *BoundedLRU[K, V]) Delete(key K) bool {\n',
-    '''// Purge removes every cached value and invokes the eviction callback after
-// releasing the cache lock.
-func (cache *BoundedLRU[K, V]) Purge() {
-	if cache == nil {
-		return
-	}
-	cache.mu.Lock()
-	entries := make([]boundedLRUEntry[K, V], 0, len(cache.entries))
-	for element := cache.order.Front(); element != nil; element = element.Next() {
-		entries = append(entries, element.Value.(boundedLRUEntry[K, V]))
-	}
-	cache.entries = make(map[K]*list.Element, cache.capacity)
-	cache.order.Init()
-	cache.mu.Unlock()
-	if cache.onEvict != nil {
-		for _, entry := range entries {
-			cache.onEvict(entry.key, entry.value)
-		}
-	}
-}
-
-''',
-    'func (cache *BoundedLRU[K, V]) Purge()',
 )
 
 utls_client = ROOT / 'internal/runtime/executor/helps/utls_client.go'
@@ -3503,24 +3480,6 @@ replace_once(
     'policyCtx, effectiveModel, effectiveBody, policyErr := applyAPIKeyModelPolicy',
 )
 
-plugin_executor_route_source = ROOT / 'internal/pluginhost/executor_route.go'
-insert_before(
-    plugin_executor_route_source,
-    '// ExecutePluginExecutor executes a request with the named plugin executor without changing the requested model.\n',
-    '''// PluginExecutorProvider resolves the normalized execution provider declared by a plugin executor.
-func (h *Host) PluginExecutorProvider(pluginID string) (string, bool) {
-\tadapter, errAdapter := h.executorAdapterForPlugin(pluginID)
-\tif errAdapter != nil || adapter == nil {
-\t\treturn "", false
-\t}
-\tprovider := strings.ToLower(strings.TrimSpace(adapter.Identifier()))
-\treturn provider, provider != ""
-}
-
-''',
-    'func (h *Host) PluginExecutorProvider(',
-)
-
 handlers_source = ROOT / 'sdk/api/handlers/handlers.go'
 insert_before(
     handlers_source,
@@ -4793,41 +4752,6 @@ insert_before(
 ''',
     'Optional Pro plugin: subtract xAI OAuth models by detected account plan.',
 )
-config_yaml = ROOT / 'internal/config/config_yaml.go'
-insert_before(
-    config_yaml,
-    '// NormalizeCommentIndentation removes indentation from standalone YAML comment lines to keep them left aligned.\n',
-    '// SaveConfigPreserveCommentsUpdateNestedBoolScalar updates a nested bool scalar while preserving comments and positions.\nfunc SaveConfigPreserveCommentsUpdateNestedBoolScalar(configFile string, path []string, value bool) error {\n\tdata, err := os.ReadFile(configFile)\n\tif err != nil {\n\t\treturn err\n\t}\n\tvar root yaml.Node\n\tif err = yaml.Unmarshal(data, &root); err != nil {\n\t\treturn err\n\t}\n\tif root.Kind != yaml.DocumentNode || len(root.Content) == 0 {\n\t\treturn fmt.Errorf("invalid yaml document structure")\n\t}\n\tnode := root.Content[0]\n\tfor i, key := range path {\n\t\tif i == len(path)-1 {\n\t\t\tv := getOrCreateMapValue(node, key)\n\t\t\tv.Kind = yaml.ScalarNode\n\t\t\tv.Tag = "!!bool"\n\t\t\tif value {\n\t\t\t\tv.Value = "true"\n\t\t\t} else {\n\t\t\t\tv.Value = "false"\n\t\t\t}\n\t\t} else {\n\t\t\tnext := getOrCreateMapValue(node, key)\n\t\t\tif next.Kind != yaml.MappingNode {\n\t\t\t\tnext.Kind = yaml.MappingNode\n\t\t\t\tnext.Tag = "!!map"\n\t\t\t}\n\t\t\tnode = next\n\t\t}\n\t}\n\tf, err := os.Create(configFile)\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer func() { _ = f.Close() }()\n\tvar buf bytes.Buffer\n\tenc := yaml.NewEncoder(&buf)\n\tenc.SetIndent(2)\n\tif err = enc.Encode(&root); err != nil {\n\t\t_ = enc.Close()\n\t\treturn err\n\t}\n\tif err = enc.Close(); err != nil {\n\t\treturn err\n\t}\n\tdata = NormalizeCommentIndentation(buf.Bytes())\n\t_, err = f.Write(data)\n\treturn err\n}\n\n',
-    'func SaveConfigPreserveCommentsUpdateNestedBoolScalar',
-)
-replace_go_function(
-    config_yaml,
-    'func SaveConfigPreserveCommentsUpdateNestedBoolScalar',
-    '// SaveConfigPreserveCommentsUpdateNestedBoolScalar updates an existing bool scalar without creating missing keys.\nfunc SaveConfigPreserveCommentsUpdateNestedBoolScalar(configFile string, path []string, value bool) error {\n\t_, err := SaveConfigPreserveCommentsUpdateExistingScalars(configFile, []ExistingScalarUpdate{{Path: path, Value: value}})\n\treturn err\n}\n',
-    'SaveConfigPreserveCommentsUpdateExistingScalars(configFile, []ExistingScalarUpdate',
-)
-insert_before(
-    config_yaml,
-    '// NormalizeCommentIndentation removes indentation from standalone YAML comment lines to keep them left aligned.\n',
-    '// PluginAutoInstallProxyURL returns the proxy URL used by plugin store auto-install requests.\nfunc (cfg *Config) PluginAutoInstallProxyURL() string {\n\tif cfg == nil {\n\t\treturn ""\n\t}\n\treturn cfg.ProxyURL\n}\n\n// PluginAutoInstallEnabled reports whether dynamic plugins are enabled.\nfunc (cfg *Config) PluginAutoInstallEnabled() bool {\n\treturn cfg != nil && cfg.Plugins.Enabled\n}\n\n// PluginAutoInstallDir returns the normalized plugin discovery directory.\nfunc (cfg *Config) PluginAutoInstallDir() string {\n\tif cfg == nil {\n\t\treturn ""\n\t}\n\treturn cfg.Plugins.Dir\n}\n\n// PluginAutoInstallStoreSources returns configured third-party plugin registry URLs.\nfunc (cfg *Config) PluginAutoInstallStoreSources() []string {\n\tif cfg == nil || len(cfg.Plugins.StoreSources) == 0 {\n\t\treturn nil\n\t}\n\treturn append([]string(nil), cfg.Plugins.StoreSources...)\n}\n\n// PluginAutoInstallEnabledIDs returns configured plugin IDs that should be present at startup.\nfunc (cfg *Config) PluginAutoInstallEnabledIDs() []string {\n\tif cfg == nil || len(cfg.Plugins.Configs) == 0 {\n\t\treturn nil\n\t}\n\tids := make([]string, 0, len(cfg.Plugins.Configs))\n\tfor id, item := range cfg.Plugins.Configs {\n\t\tif item.Enabled == nil || !*item.Enabled {\n\t\t\tcontinue\n\t\t}\n\t\tids = append(ids, id)\n\t}\n\treturn ids\n}\n\n',
-    'func (cfg *Config) PluginAutoInstallProxyURL',
-)
-config_normalization = ROOT / 'internal/config/config_normalization.go'
-insert_before(
-    config_normalization,
-    '// SanitizeCodexHeaderDefaults trims surrounding whitespace from the\n',
-    '''// PluginAutoInstallStoreAuth returns normalized plugin store authentication rules.
-func (cfg *Config) PluginAutoInstallStoreAuth() []sdkpluginstore.AuthConfig {
-\tif cfg == nil || len(cfg.Plugins.StoreAuth) == 0 {
-\t\treturn nil
-\t}
-\treturn append([]sdkpluginstore.AuthConfig(nil), cfg.Plugins.StoreAuth...)
-}
-
-''',
-    'func (cfg *Config) PluginAutoInstallStoreAuth()',
-)
-
 updater = ROOT / 'internal/managementasset/updater.go'
 replace_once(
     updater,
@@ -7244,7 +7168,7 @@ format_go_writes([
     'sdk/api/handlers/openai/openai_responses_websocket_forward.go',
     'sdk/api/handlers/openai/responses_websocket_terminal_order_test.go',
     'cmd/server/main.go',
-	'internal/cache/bounded_lru.go',
+    'internal/cache/bounded_lru_pro.go',
 	'internal/auth/claude/utls_transport.go',
     'internal/api/server.go',
     'internal/api/api_key_policy_middleware_test.go',
@@ -7288,7 +7212,7 @@ format_go_writes([
     'internal/api/handlers/management/routing_policy_test.go',
     'internal/config/config_existing_updates.go',
     'internal/config/config_existing_updates_test.go',
-    'internal/config/config_normalization.go',
+    'internal/config/pro_plugin_autoinstall.go',
     'internal/embeddedusage/facade.go',
     'internal/embeddedusage/internalusage/facade.go',
     'internal/pluginhost/gemini_cli_storage_compat.go',
@@ -7300,7 +7224,7 @@ format_go_writes([
 	'internal/pluginhost/pro_quota_provider_test.go',
 	'internal/pluginhost/runtime_proxy_override_test.go',
     'internal/pluginhost/snapshot.go',
-    'internal/pluginhost/executor_route.go',
+    'internal/pluginhost/pro_executor_provider.go',
     'internal/pluginhost/adapters_executors.go',
 	'internal/pluginhost/plugin_executor_usage.go',
     'internal/pluginhost/plugin_executor_usage_test.go',

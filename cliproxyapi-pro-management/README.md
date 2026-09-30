@@ -156,9 +156,10 @@ UI 会在主布局中启动 `QuotaPersistenceBootstrap`，把已保存的配额�
 - `authFilesApi.patchFile`、`setStatusWithFallback` helper。
 - `accountInspection` service export。
 - `Select` 的 `triggerClassName` 和 `dropdownClassName` props。
-- `maskSensitiveText` 工具函数。
 - quota state 类型和 success state 中的 `cachedAt` 字段。
 - 管理中心版本卡片的“检查更新”按钮；调用后端 `POST /management-panel/check-update`，仅在 latest release 资源哈希变化时替换面板，并在实际更新后重新加载页面。
+
+脱敏工具位于 `overlay/src/pro/shared/maskSensitiveText.ts`，复用原生 `maskApiKey`；不再修改 upstream 的 `utils/format.ts`。
 
 请求监控采用“首屏快照 + SSE 增量 + cursor 追平”同步链路，并按事件 ID 去重。趋势图、模型排行和 API Key 排行优先使用 `/usage/aggregates` 服务端聚合，接口不可用时自动回退到本地明细计算。页面隐藏时会暂停 SSE 和 React 增量刷新，回到前台后再按 cursor 补齐；标题区会展示实时、重连、后台暂停、异常和最近事件时间。
 
