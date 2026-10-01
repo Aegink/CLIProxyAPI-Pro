@@ -11,10 +11,11 @@ internal/api/handlers/management/auth_files.go	must-remain-host-patch	native-aut
 internal/api/handlers/management/auth_files_crud.go	generic-host-hook	auth-lifecycle	expose-auth-delete-callback-before-moving-runtime-state
 internal/api/handlers/management/auth_files_fields.go	generic-host-hook	auth-lifecycle	expose-auth-mutation-and-credential-replacement-callbacks
 internal/api/handlers/management/handler.go	must-remain-host-patch	management-auth	retain-management-session-and-host-lifecycle
+internal/api/handlers/management/plugin_quota.go	must-remain-host-patch	quota-management	share-pro-quota-fetch-persistence-across-v0-and-v8
+internal/api/handlers/management/plugin_quota_test.go	must-remain-host-patch	quota-management	initialize-pro-persistence-for-upstream-endpoint-fixture
 internal/api/handlers/management/plugins.go	generic-host-hook	plugin-quota	upstream-quota-capability-metadata
 internal/api/server.go	must-remain-host-patch	api-key-policy	retain-request-policy-composition-and-shutdown
 internal/api/server_management.go	must-remain-host-patch	management-routes	retain-management-auth-and-mixed-pro-route-composition-while-narrowing-plugin-owned-routes
-internal/api/server_management_v8.go	must-remain-host-patch	quota-management	share-pro-quota-fetch-persistence-across-v0-and-v8
 internal/api/server_middleware.go	must-remain-host-patch	api-key-policy	retain-authenticated-key-policy-and-quota-admission
 internal/api/server_options.go	must-remain-host-patch	api-key-policy	retain-host-policy-composition-option
 internal/api/server_reload.go	must-remain-host-patch	api-key-policy	retain-atomic-configured-key-publication

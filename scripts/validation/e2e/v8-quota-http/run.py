@@ -34,12 +34,20 @@ def verify(request):
     index = state["auth_index"]
     probe = state["probe_index"]
     summary_probe = state["summary_probe_index"]
-    routes = ["/v0/management/quota/fetch", "/v8/management/credentials/quota/fetch"]
+    legacy = "/v0/management/quota/fetch"
+    routes = [legacy, "/v0/management/plugins/fixture-plugin/quota",
+              "/v8/management/plugins/fixture-plugin/quota"]
+    for suffix, method in (("providers", "GET"), ("fetch", "POST"), ("reset", "POST")):
+        code, body = request("/v8/management/credentials/quota/" + suffix,
+                             None if method == "GET" else {}, method=method)
+        assert code == 404, (code, body)
     summary_failures = []
     for iteration, route in enumerate(routes, 1):
         code, body = request(route, {"auth_index": index})
         assert code == 200, (code, body)
         assert body["snapshot"]["plan"]["id"] == f"tier-{iteration}", body
+        assert body["subscription"]["tierId"] == f"tier-{iteration}", body
+        assert body["groups"][0]["buckets"][0]["remainingFraction"] == 0.75, body
         expected_summary = [{
             "key": "credits_used", "label": "Credits used",
             "value": iteration * 100, "unit": "credits", "format": "number",
@@ -54,7 +62,7 @@ def verify(request):
         assert state["auth"]["token"] == f"updated-{iteration}", state
         assert len(state["entries"]) == 1, state
 
-    for route in routes:
+    for route in [legacy]:
         before = request("/fixture/state")[1]
         code, body = request(route, {"auth_index": probe, "plugin_id": "missing"})
         assert code == 501, (code, body)
@@ -76,7 +84,7 @@ def verify(request):
         "key": "balance", "label": "Balance", "value": 42.5,
         "format": "currency", "currency": "USD",
     }]
-    for route in routes:
+    for route in [legacy]:
         code, body = request(route, {"auth_index": summary_probe})
         assert code == 200, (code, body)
         assert body["snapshot"]["items"] == [], body
@@ -91,14 +99,41 @@ def verify(request):
         {"provider": "fixture-plugin"},
         {"plugin_id": "fixture-plugin", "provider": "selected"},
     ):
-        code, body = request(routes[1], dict(auth_index=index, **selector))
+        code, body = request(legacy, dict(auth_index=index, **selector))
         assert code == 200, (code, body)
 
+    for route in routes[1:]:
+        # URL selection wins over misleading legacy body selectors.
+        code, body = request(route, {"auth_index": index, "plugin_id": "missing", "provider": "fail"})
+        assert code == 200 and body["plugin_id"] == "fixture-plugin", (code, body)
+        code, body = request(route + "?authIndex=" + index)
+        assert code == 200 and body["summary"], (code, body)
+        assert "auth_update" not in body
+        state = request("/fixture/state")[1]
+        call = body["snapshot"]["plan"]["id"].removeprefix("tier-")
+        assert state["auth"]["token"] == "updated-" + call, state
+        saved = next(entry for entry in state["entries"] if entry["authIndex"] == index)
+        assert saved["data"] == body["snapshot"], (saved, body)
+        before = request("/fixture/state")[1]
+        for path, payload, expected in (
+            (route.replace("fixture-plugin", "missing"), {"auth_index": probe}, 404),
+            (route, {"auth_index": "missing"}, 404),
+            (route, {}, 400),
+        ):
+            code, body = request(path, payload)
+            assert code == expected, (code, body)
+        request("/fixture/mode", {"mode": 1})
+        code, body = request(route, {"auth_index": index})
+        assert code == 502, (code, body)
+        request("/fixture/mode", {"mode": 0})
+        after = request("/fixture/state")[1]
+        assert snapshots(before) == snapshots(after)
+        assert before["auth"] == after["auth"]
+
     before = request("/fixture/state")[1]
+    request("/fixture/mode", {"mode": 2})
     with concurrent.futures.ThreadPoolExecutor() as pool:
-        pending = pool.submit(request, routes[1], {
-            "auth_index": index, "plugin_id": "fixture-plugin", "provider": "delay",
-        })
+        pending = pool.submit(request, routes[2], {"auth_index": index})
         for _ in range(100):
             if request("/fixture/state")[1]["entered"]:
                 break
@@ -133,10 +168,10 @@ def main():
     }
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-    def request(path, body=None):
+    def request(path, body=None, method=None):
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(
-            f"http://127.0.0.1:{port}" + path, data=data,
+            f"http://127.0.0.1:{port}" + path, data=data, method=method,
             headers={"Authorization": "Bearer quota-fixture-key", "Content-Type": "application/json"},
         )
         try:
@@ -144,8 +179,11 @@ def main():
                 status, raw = response.status, response.read()
         except urllib.error.HTTPError as error:
             status, raw = error.code, error.read()
-        decoded = json.loads(raw)
-        receipt["requests"].append({"path": path, "status": status, "body": decoded})
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError:
+            decoded = raw.decode()
+        receipt["requests"].append({"method": req.get_method(), "path": path, "status": status, "body": decoded})
         return status, decoded
 
     with (output / "server.log").open("w") as log:

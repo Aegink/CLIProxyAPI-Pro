@@ -61,9 +61,13 @@ as stale instead of being erased. Tier IDs are normalized as follows: `free-tier
 
 ## Management and persistence
 
-`POST /v0/management/quota/fetch` and `POST /v8/management/credentials/quota/fetch`
-share one handler and accept `{ "auth_index": "..." }`. Explicit `plugin_id` or a different
-`provider` selection never falls back to the credential's local declarative probe.
+`POST /v0/management/quota/fetch` and `GET/POST /v0/management/plugins/:id/quota`
+(or `/v8/management/plugins/:id/quota`) share Pro normalization and persistence.
+POST accepts `{ "auth_index": "..." }`; plugin GET accepts the same field as a query parameter.
+Plugin routes select by URL ID, ignore legacy body selectors, and never use a declarative fallback.
+The legacy generic v0 route retains explicit `plugin_id` / `provider` selection and credential-local
+probes only when no conflicting explicit selection exists. Removed v8 `/credentials/quota/*`
+routes remain absent, following upstream v8.0.5 and later.
 The host resolves the auth,
 loads its previous snapshot from SQLite, invokes the matching plugin, applies any auth refresh,
 persists the normalized snapshot, and returns it. The browser is a reader of this canonical record.

@@ -57,7 +57,32 @@ func (h *Handler) FetchProPluginQuota(c *gin.Context) {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "no quota provider available for credential"})
 		return
 	}
-	result, statusCode, errorLabel, errFetch := h.persistPluginQuotaResult(ctx, auth, result)
+	h.writeProQuotaResult(c, auth, result)
+}
+
+// fetchProQuotaForPlugin retains the upstream URL selection and never falls back
+// to another provider or a credential-local declarative probe.
+func (h *Handler) fetchProQuotaForPlugin(c *gin.Context, pluginID, authIndex string) {
+	auth := h.authByIndex(authIndex)
+	if auth == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "auth not found"})
+		return
+	}
+	h.mu.Lock()
+	host := h.pluginHost
+	h.mu.Unlock()
+	if host == nil || !host.HasQuotaProviderForPlugin(pluginID) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "quota provider not found for plugin"})
+		return
+	}
+	ctx := c.Request.Context()
+	previous := loadPluginQuotaSnapshot(ctx, auth.Provider, auth.FileName, auth.Index)
+	result := host.FetchProQuotaWithSelection(ctx, auth, previous, pluginID, "")
+	h.writeProQuotaResult(c, auth, result)
+}
+
+func (h *Handler) writeProQuotaResult(c *gin.Context, auth *coreauth.Auth, result pluginhost.QuotaResult) {
+	result, statusCode, errorLabel, errFetch := h.persistPluginQuotaResult(c.Request.Context(), auth, result)
 	if errFetch != nil {
 		c.JSON(statusCode, gin.H{"error": errorLabel, "message": errFetch.Error()})
 		return

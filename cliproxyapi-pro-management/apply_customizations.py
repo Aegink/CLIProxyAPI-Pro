@@ -2031,6 +2031,41 @@ def patch_cooldown_hint_test(target: Path) -> None:
     )
 
 
+def patch_provider_model_options_test(target: Path) -> None:
+    # Upstream expects translation keys, but other tests initialize the shared
+    # application i18n. Render through a private key-only instance so provider
+    # capability assertions neither depend on nor mutate the global language.
+    path = target / 'tests/providerModelOptions.test.ts'
+    replace_once(
+        path,
+        "import { renderToStaticMarkup } from 'react-dom/server';\n",
+        "import { renderToStaticMarkup } from 'react-dom/server';\n"
+        "import { createInstance } from 'i18next';\n"
+        "import { I18nextProvider } from 'react-i18next';\n"
+        "\n"
+        "const modelOptionsI18n = createInstance();\n"
+        "void modelOptionsI18n.init({ lng: 'cimode', initAsync: false });\n",
+    )
+    replace_once(
+        path,
+        "    renderToStaticMarkup(\n"
+        "      createElement(ModelAdvancedFields, {\n",
+        "    renderToStaticMarkup(\n"
+        "      createElement(I18nextProvider, { i18n: modelOptionsI18n },\n"
+        "      createElement(ModelAdvancedFields, {\n",
+    )
+    replace_once(
+        path,
+        "        onUpdate: () => {},\n"
+        "      })\n"
+        "    );\n",
+        "        onUpdate: () => {},\n"
+        "      })\n"
+        "      )\n"
+        "    );\n",
+    )
+
+
 def main() -> None:
     if len(sys.argv) > 2:
         raise SystemExit('Usage: apply_customizations.py [target_dir]')
@@ -2042,6 +2077,7 @@ def main() -> None:
 
     copy_overlay(target)
     patch_cooldown_hint_test(target)
+    patch_provider_model_options_test(target)
     patch_modal_focus_restore(target)
     patch_modal_lifecycle(target)
     patch_sheet_lifecycle(target)

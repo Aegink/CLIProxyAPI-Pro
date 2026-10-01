@@ -143,7 +143,7 @@ The management UI reads and writes this cache through `/usage/quota-cache`, so q
 ### QuotaProvider plugin protocol
 
 The patch layer reuses the upstream plugin SDK/ABI `QuotaProvider` capability and callback lifecycle.
-`POST /v0/management/quota/fetch` and `POST /v8/management/credentials/quota/fetch` share Pro normalized snapshots,
+`POST /v0/management/quota/fetch` and `GET/POST /v8/management/plugins/:id/quota` share Pro normalized snapshots,
 SQLite persistence, and last-known-good plan retention. The current Gemini CLI plugin needs no
 changes: Core adapts its existing `Executor.HttpRequest`; a future native implementation takes
 priority automatically. See [QUOTA_PROVIDER.md](QUOTA_PROVIDER.md) for the schema and compatibility

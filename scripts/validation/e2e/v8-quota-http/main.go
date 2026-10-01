@@ -24,6 +24,7 @@ import (
 type provider struct {
 	calls   atomic.Int64
 	entered atomic.Bool
+	mode    atomic.Int32
 	release chan struct{}
 }
 
@@ -36,10 +37,10 @@ func (*provider) ResetQuota(context.Context, pluginapi.QuotaResetRequest) (plugi
 }
 func (p *provider) FetchQuota(ctx context.Context, r pluginapi.QuotaFetchRequest) (pluginapi.QuotaFetchResponse, error) {
 	n := p.calls.Add(1)
-	if r.Provider == "fail" {
+	if r.Provider == "fail" || p.mode.Load() == 1 {
 		return pluginapi.QuotaFetchResponse{}, fmt.Errorf("fixture failure")
 	}
-	if r.Provider == "delay" {
+	if r.Provider == "delay" || p.mode.Load() == 2 {
 		p.entered.Store(true)
 		<-p.release
 	}
@@ -89,6 +90,17 @@ func main() {
 	cfg.RemoteManagement.DisableControlPanel = true
 	cfg.RemoteManagement.SecretKey = "fixture-key-configured"
 	server := api.NewServer(cfg, manager, access.NewManager(), filepath.Join(root, "config.yaml"), api.WithPluginHost(host), api.WithLocalManagementPassword("quota-fixture-key"), api.WithEngineConfigurator(func(e *gin.Engine) {
+		e.POST("/fixture/mode", func(c *gin.Context) {
+			var body struct {
+				Mode int32 `json:"mode"`
+			}
+			if err := c.ShouldBindJSON(&body); err != nil {
+				c.JSON(400, gin.H{"error": err.Error()})
+				return
+			}
+			p.mode.Store(body.Mode)
+			c.JSON(200, gin.H{"ok": true})
+		})
 		e.GET("/fixture/state", func(c *gin.Context) {
 			a, _ := manager.GetByID(auth.ID)
 			b, _ := manager.GetByID(probe.ID)

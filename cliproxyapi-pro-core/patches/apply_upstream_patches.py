@@ -6057,11 +6057,22 @@ replace_once(
     '\t\tmgmt.POST("/quota/fetch", s.mgmt.FetchProPluginQuota)\n',
 )
 
-# Both Management API generations share normalization, auth updates and Pro persistence.
+# Both API generations use plugin-scoped GET/POST routes. Keep the upstream
+# request parsing and URL selection, then share Pro normalization and persistence.
+replace_go_function(
+    ROOT / 'internal/api/handlers/management/plugin_quota.go',
+    'func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string)',
+    '''func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string) {
+\th.fetchProQuotaForPlugin(c, pluginID, authIndex)
+}
+''',
+    'h.fetchProQuotaForPlugin(c, pluginID, authIndex)',
+)
+# The existing upstream endpoint fixture now exercises persisted Pro quota.
 replace_once(
-    ROOT / 'internal/api/server_management_v8.go',
-    '\tv8.POST("/credentials/quota/fetch", s.mgmt.FetchCredentialQuota)\n',
-    '\tv8.POST("/credentials/quota/fetch", s.mgmt.FetchProPluginQuota)\n',
+    ROOT / 'internal/api/handlers/management/plugin_quota_test.go',
+    'func TestPluginSpecificQuotaEndpoints(t *testing.T) {\n',
+    'func TestPluginSpecificQuotaEndpoints(t *testing.T) {\n\tstartProQuotaTestService(t)\n',
 )
 
 auth_files_handler = ROOT / 'internal/api/handlers/management/auth_files.go'
@@ -7114,6 +7125,8 @@ format_go_writes([
 	'internal/client/codex/live/runtime_proxy_override_test.go',
     'internal/client/codex/live/websocket.go',
     'internal/client/codex/live/api_key_quota_relay_test.go',
+    'internal/api/handlers/management/plugin_quota.go',
+    'internal/api/handlers/management/plugin_quota_test.go',
     'internal/api/handlers/management/pro_plugin_quota.go',
     'internal/api/handlers/management/pro_plugin_quota_test.go',
     'internal/api/handlers/management/pro_auth_mutation.go',

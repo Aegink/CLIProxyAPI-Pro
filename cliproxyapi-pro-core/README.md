@@ -147,7 +147,7 @@ API 密钥工作区支持按 Key 设置并发请求上限（`0` 不限，最大 
 ### QuotaProvider 插件协议
 
 复用 upstream 插件 SDK/ABI 的 `QuotaProvider` 能力和宿主调用生命周期。
-`POST /v0/management/quota/fetch` 与 `POST /v8/management/credentials/quota/fetch`
+`POST /v0/management/quota/fetch` 与 `GET/POST /v8/management/plugins/:id/quota`
 共用 Pro 的规范化快照、SQLite 持久化和套餐信息 last-known-good 流程。
 当前 Gemini CLI 插件无需修改：Core 会通过插件已有的
 `Executor.HttpRequest` 提供兼容适配；插件未来原生实现协议后会自动优先使用原生能力。
