@@ -3468,7 +3468,8 @@ replace_once(
     '''func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
 ''',
     '''func (h *OpenAIAPIHandler) OpenAIModels(c *gin.Context) {
-\tallModels, policyErr := handlers.FilterModelMapsForRequest(c.Request.Context(), h.Models(), "id", registry.GetGlobalRegistry().GetModelProviders)
+\tcatalogModels := h.Models()
+\tallModels, policyErr := handlers.FilterModelMapsForRequest(c.Request.Context(), catalogModels, "id", registry.GetGlobalRegistry().GetModelProviders)
 \tif policyErr != nil {
 \t\th.WriteErrorResponse(c, policyErr)
 \t\treturn
@@ -3476,11 +3477,47 @@ replace_once(
 ''',
     'allModels, policyErr := handlers.FilterModelMapsForRequest',
 )
-# Preserve upstream catalog serialization and its error handling.
+# Preserve upstream catalog capabilities and serialization for policy-filtered
+# models, including the client-scoped apply_patch and multi-agent settings.
 replace_once(
     openai_handlers_source,
-    'h.codexClientModelsResponse(clientVersion)',
-    'codexmodels.BuildResponseForClient(allModels, registry.GetGlobalRegistry().GetModelProviders, h.Cfg != nil && h.Cfg.CodexOptimizeMultiAgentV2, clientVersion)',
+    '\t\tbody, errMarshal := codexmodels.MarshalCompact(h.codexClientModelsResponse(clientVersion))\n',
+    '''\t\tmodelRegistry := registry.GetGlobalRegistry()
+\t\tcatalogIDs := make([]string, 0, len(catalogModels))
+\t\tfor _, model := range catalogModels {
+\t\t\tif id, ok := model["id"].(string); ok && id != "" {
+\t\t\t\tcatalogIDs = append(catalogIDs, id)
+\t\t\t}
+\t\t}
+\t\tvisibleModels, policyErr := handlers.FilterModelsForRequest(c.Request.Context(), catalogIDs, modelRegistry.GetModelProviders)
+\t\tif policyErr != nil {
+\t\t\th.WriteErrorResponse(c, policyErr)
+\t\t\treturn
+\t\t}
+\t\teffectiveIDs := make(map[string]string, len(visibleModels))
+\t\tfor _, model := range visibleModels {
+\t\t\teffectiveIDs[model.ID] = model.EffectiveID
+\t\t}
+\t\teffectiveModelID := func(id string) string {
+\t\t\tif effectiveID, ok := effectiveIDs[id]; ok {
+\t\t\t\treturn effectiveID
+\t\t\t}
+\t\t\treturn id
+\t\t}
+\t\tprovidersForModel := func(id string) []string {
+\t\t\treturn modelRegistry.GetModelProviders(effectiveModelID(id))
+\t\t}
+\t\twebSearchCapabilityForModel := func(id string) *bool {
+\t\t\treturn modelRegistry.GetResponsesWebSearchCapability(effectiveModelID(id))
+\t\t}
+\t\tvar applyPatchCapabilityForModel codexmodels.ApplyPatchCapabilityForModelFunc
+\t\tif h.Cfg != nil && h.Cfg.Client.Codex.EnableApplyPatch {
+\t\t\tapplyPatchCapabilityForModel = func(id string) bool {
+\t\t\t\treturn h.SupportsApplyPatchModel(effectiveModelID(id))
+\t\t\t}
+\t\t}
+\t\tbody, errMarshal := codexmodels.MarshalCompact(codexmodels.BuildResponseForClientWithToolCapabilities(allModels, providersForModel, webSearchCapabilityForModel, applyPatchCapabilityForModel, h.Cfg != nil && h.Cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion))
+''',
 )
 replace_once(
     openai_handlers_source,
@@ -4160,28 +4197,14 @@ replace_once(
 claude_execute = ROOT / 'internal/runtime/executor/claude_executor_execute.go'
 replace_once(
     claude_execute,
-    '''\tif upstreamStream {
-\t\tif errValidate := validateClaudeStreamingResponse(data); errValidate != nil {
-''',
-    '''\tvar responseUsageBuffer helps.StreamUsageBuffer
-\tif upstreamStream {
-\t\tif errValidate := validateClaudeStreamingResponse(data); errValidate != nil {
-''',
+    '\tvar streamUsage helps.StreamUsageBuffer\n',
+    '\tvar responseUsageBuffer helps.StreamUsageBuffer\n',
     'var responseUsageBuffer helps.StreamUsageBuffer',
 )
 replace_once(
     claude_execute,
-    '''\t\tlines := bytes.Split(data, []byte("\\n"))
-\t\tvar streamUsage helps.StreamUsageBuffer
-\t\tfor i, line := range lines {
-\t\t\treporter.ObserveResponseModel(line)
-\t\t\tstreamUsage.ObserveClaudeStream(line)
-''',
-    '''\t\tlines := bytes.Split(data, []byte("\\n"))
-\t\tfor i, line := range lines {
-\t\t\treporter.ObserveResponseModel(line)
-\t\t\tresponseUsageBuffer.ObserveClaudeStream(line)
-''',
+    '\t\t\tstreamUsage.ObserveClaudeStream(line)\n',
+    '\t\t\tresponseUsageBuffer.ObserveClaudeStream(line)\n',
     'responseUsageBuffer.ObserveClaudeStream(',
 )
 replace_once(
@@ -4226,22 +4249,8 @@ replace_once(
 replace_once(
     claude_execute,
     '\t\tstreamUsage.Publish(ctx, reporter)\n',
-    '',
+    '\t\tresponseUsageBuffer.Publish(ctx, reporter)\n',
     'responseUsageBuffer.Publish(ctx, reporter)',
-)
-replace_once(
-    claude_execute,
-    '''\t} else {
-\t\tcommitClaudeContinuity(diagnosticsState, claudeMessageIDFromResponse(data), helps.HeaderValueCaseInsensitive(httpResp.Header, "request-id"))
-\t\treporter.ObserveResponseModel(data)
-\t\treporter.Publish(ctx, helps.ParseClaudeUsage(data))
-\t\tvar errRestore error
-''',
-    '''\t} else {
-\t\tcommitClaudeContinuity(diagnosticsState, claudeMessageIDFromResponse(data), helps.HeaderValueCaseInsensitive(httpResp.Header, "request-id"))
-\t\treporter.ObserveResponseModel(data)
-\t\tvar errRestore error
-''',
 )
 # Keep the replacement scoped to the translator call. Upstream may insert
 # response-format post-processing between translation and response assembly,
@@ -4254,7 +4263,7 @@ replace_once(
 \t\tto,
 \t\tresponseFormat,
 \t\treq.Model,
-\t\topts.OriginalRequest,
+\t\thelps.ApplyPatchOriginalRequest(req, opts),
 \t\tbodyForTranslation,
 \t\tdata,
 \t\t&param,
@@ -4266,11 +4275,26 @@ replace_once(
 \t\tto,
 \t\tresponseFormat,
 \t\treq.Model,
-\t\topts.OriginalRequest,
+\t\thelps.ApplyPatchOriginalRequest(req, opts),
 \t\tbodyForTranslation,
 \t\tdata,
 \t\t&param,
 \t)
+''',
+    'translateNonStreamResponse(',
+)
+# Upstream defers success usage until apply_patch validation. Feed translator
+# panics and native tool-input/empty-output failures through the same buffered
+# Pro accounting path while retaining upstream's sanitized gateway error.
+replace_once(
+    claude_execute,
+    '''\tif helps.ApplyPatchTranslationError(param) != nil || len(out) == 0 {
+\t\treturn cliproxyexecutor.Response{}, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage}
+\t}
+''',
+    '''\tif errTranslate == nil && (helps.ApplyPatchTranslationError(param) != nil || len(out) == 0) {
+\t\terrTranslate = statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage}
+\t}
 \tif errTranslate != nil {
 \t\terr = wrapClaudeFastRequestError(fastRequest, httpResp.StatusCode, errTranslate)
 \t\tif upstreamStream {
@@ -4283,18 +4307,12 @@ replace_once(
 \t\treturn resp, err
 \t}
 ''',
-    'translateNonStreamResponse(',
+    'errTranslate == nil && (helps.ApplyPatchTranslationError(param)',
 )
 insert_before(
     claude_execute,
     '\tresp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}\n',
-    '''\tif upstreamStream {
-\t\tresponseUsageBuffer.Publish(ctx, reporter)
-\t} else {
-\t\treporter.Publish(ctx, helps.ParseClaudeUsage(data))
-\t}
-\treporter.EnsurePublished(ctx)
-''',
+    '\treporter.EnsurePublished(ctx)\n',
     '''\treporter.EnsurePublished(ctx)
 \tresp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}
 ''',
@@ -4305,9 +4323,7 @@ replace_once(
     openai_compat_execute,
     '''\thelps.AppendAPIResponseChunk(ctx, e.cfg, body)
 \treporter.ObserveResponseModel(body)
-\treporter.Publish(ctx, helps.ParseOpenAIUsage(body))
 \t// Ensure we at least record the request even if upstream doesn't return usage
-\treporter.EnsurePublished(ctx)
 \t// Translate response back to source format when needed
 ''',
     '''\thelps.AppendAPIResponseChunk(ctx, e.cfg, body)
@@ -4321,23 +4337,34 @@ replace_once(
 replace_once(
     openai_compat_execute,
     '''\tvar param any
-\tout := sdktranslator.TranslateNonStream(ctx, to, responseFormat, req.Model, opts.OriginalRequest, translated, body, &param)
+\tout := sdktranslator.TranslateNonStream(ctx, to, responseFormat, req.Model, helps.ApplyPatchOriginalRequest(req, opts), translated, body, &param)
 ''',
     '''\tvar param any
-\tout, errTranslate := translateNonStreamResponse(ctx, to, responseFormat, req.Model, opts.OriginalRequest, translated, body, &param)
+\tout, errTranslate := translateNonStreamResponse(ctx, to, responseFormat, req.Model, helps.ApplyPatchOriginalRequest(req, opts), translated, body, &param)
+''',
+    'out, errTranslate := translateNonStreamResponse(ctx, to, responseFormat',
+)
+replace_once(
+    openai_compat_execute,
+    '''\tif helps.ApplyPatchTranslationError(param) != nil || len(out) == 0 {
+\t\treturn cliproxyexecutor.Response{}, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage}
+\t}
+''',
+    '''\tif errTranslate == nil && (helps.ApplyPatchTranslationError(param) != nil || len(out) == 0) {
+\t\terrTranslate = statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage}
+\t}
 \tif errTranslate != nil {
 \t\terr = errTranslate
 \t\treporter.PublishFailureWithDetail(ctx, helps.ParseOpenAIUsage(body), err)
 \t\treturn resp, err
 \t}
 ''',
-    'out, errTranslate := translateNonStreamResponse(ctx, to, responseFormat',
+    'errTranslate == nil && (helps.ApplyPatchTranslationError(param)',
 )
 insert_before(
     openai_compat_execute,
     '\tresp = cliproxyexecutor.Response{Payload: out, Headers: httpResp.Header.Clone()}\n',
-    '''\treporter.Publish(ctx, helps.ParseOpenAIUsage(body))
-\t// Ensure we at least record the request even if upstream doesn't return usage.
+    '''\t// Ensure we at least record the request even if upstream doesn't return usage.
 \treporter.EnsurePublished(ctx)
 ''',
     '''\treporter.EnsurePublished(ctx)
@@ -4358,6 +4385,20 @@ replace_once(
 \t\t}
 ''',
     'publishStreamFailure := func(errStream error)',
+)
+replace_all_exact(
+    openai_compat_execute,
+    '\t\t\thelps.RecordApplyPatchStreamFailure(ctx, param, reporter, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})\n',
+    '''\t\t\tpublishApplyPatchStreamFailureWithUsage(ctx, param, reporter, &streamUsage, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})
+\t\t\thelps.RecordApplyPatchStreamFailure(ctx, param, reporter, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})
+''',
+    2,
+)
+replace_once(
+    openai_compat_execute,
+    'helps.EndApplyPatchStream(ctx, param, reporter, out, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})',
+    'endApplyPatchStreamWithUsage(ctx, param, reporter, out, &streamUsage, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})',
+    'endApplyPatchStreamWithUsage(ctx, param, reporter, out, &streamUsage',
 )
 openai_stream_text = read(openai_compat_execute)
 deferred_stream_publish = '''\t\tdefer streamUsage.Publish(ctx, reporter)
@@ -4512,6 +4553,20 @@ replace_once(
     'terminal := claudeStreamTerminal{',
 )
 
+replace_once(
+    claude_stream,
+    '\t\t\thelps.RecordApplyPatchStreamFailure(ctx, param, reporter, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})\n',
+    '''\t\t\tpublishApplyPatchStreamFailureWithUsage(ctx, param, reporter, &usageBuffer, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})
+\t\t\thelps.RecordApplyPatchStreamFailure(ctx, param, reporter, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})
+''',
+    'publishApplyPatchStreamFailureWithUsage(ctx, param, reporter, &usageBuffer',
+)
+replace_once(
+    claude_stream,
+    'helps.EndApplyPatchStream(ctx, param, reporter, out, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})',
+    'endApplyPatchStreamWithUsage(ctx, param, reporter, out, &usageBuffer, statusErr{code: http.StatusBadGateway, msg: helps.ApplyPatchUpstreamErrorMessage})',
+    'endApplyPatchStreamWithUsage(ctx, param, reporter, out, &usageBuffer',
+)
 stream_text = read(claude_stream)
 restore_failure_call = 'emitResponseError(fmt.Errorf("restore Claude OAuth tool name from streaming response: %w", errRestore))'
 if stream_text.count(restore_failure_call) != 2:

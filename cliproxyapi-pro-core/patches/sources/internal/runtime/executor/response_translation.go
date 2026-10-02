@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
+	cliproxyexecutor "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/executor"
 	sdktranslator "github.com/router-for-me/CLIProxyAPI/v7/sdk/translator"
 )
 
@@ -32,4 +34,38 @@ func translateNonStreamResponse(
 	}()
 	out = sdktranslator.TranslateNonStream(ctx, from, to, model, originalRequest, translatedRequest, response, param)
 	return out, nil
+}
+
+func publishApplyPatchStreamFailureWithUsage(ctx context.Context, param any, reporter *helps.UsageReporter, buffer *helps.StreamUsageBuffer, gatewayErr error) {
+	if helps.ApplyPatchTranslationError(param) != nil {
+		if !buffer.PublishFailure(ctx, reporter, gatewayErr) {
+			reporter.PublishFailure(ctx, gatewayErr)
+		}
+	}
+}
+
+// Adapt only finalization's accounting hook. Upstream still owns final chunk
+// delivery, error propagation, and cancellation through EndApplyPatchStream.
+// FinalizeToolInput consumes the underlying state's terminal chunks once.
+type applyPatchStreamUsageState struct {
+	ctx        context.Context
+	param      any
+	reporter   *helps.UsageReporter
+	buffer     *helps.StreamUsageBuffer
+	gatewayErr error
+}
+
+func (s applyPatchStreamUsageState) ToolInputError() error {
+	return helps.ApplyPatchTranslationError(s.param)
+}
+
+func (s applyPatchStreamUsageState) FinalizeToolInput() [][]byte {
+	chunks := helps.FinalizeApplyPatchStream(s.param)
+	publishApplyPatchStreamFailureWithUsage(s.ctx, s.param, s.reporter, s.buffer, s.gatewayErr)
+	return chunks
+}
+
+func endApplyPatchStreamWithUsage(ctx context.Context, param any, reporter *helps.UsageReporter, out chan<- cliproxyexecutor.StreamChunk, buffer *helps.StreamUsageBuffer, gatewayErr error) bool {
+	state := applyPatchStreamUsageState{ctx: ctx, param: param, reporter: reporter, buffer: buffer, gatewayErr: gatewayErr}
+	return helps.EndApplyPatchStream(ctx, state, reporter, out, gatewayErr)
 }
