@@ -167,6 +167,47 @@ func TestPinnedSuccessRecoversCredentialAndModelCooldown(t *testing.T) {
 	}
 }
 
+func TestTerminalUnauthorizedSuccessRequiresPinnedRecovery(t *testing.T) {
+	for _, pinned := range []bool{false, true} {
+		name := "ordinary"
+		if pinned {
+			name = "pinned"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			manager := NewManager(nil, nil, nil)
+			auth, err := manager.Register(ctx, &Auth{
+				ID: "terminal-401", Provider: "codex", Status: StatusError, Unavailable: true,
+				LastError:     &Error{HTTPStatus: http.StatusUnauthorized, Message: "token rejected"},
+				StatusMessage: "token rejected",
+				ModelStates: map[string]*ModelState{"model-a": {
+					Status: StatusError, Unavailable: true,
+					LastError: &Error{HTTPStatus: http.StatusUnauthorized, Message: "token rejected"},
+				}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := Result{AuthID: auth.ID, Model: "model-a", Success: true}
+			if pinned {
+				result = BindPinnedResult(auth, result)
+			}
+			manager.MarkResult(ctx, result)
+			current, _ := manager.GetByID(auth.ID)
+			if pinned {
+				if current.Unavailable || current.Status != StatusActive || current.LastError != nil || current.StatusMessage != "" || current.ModelStates["model-a"].Unavailable {
+					t.Fatalf("pinned recovery retained terminal state: %+v", current)
+				}
+			} else if !current.Unavailable || current.Status != StatusError || current.LastError == nil || current.LastError.HTTPStatus != http.StatusUnauthorized {
+				t.Fatalf("ordinary success cleared terminal state: %+v", current)
+			}
+			if current.Success != 1 {
+				t.Fatalf("success count = %d, want 1", current.Success)
+			}
+		})
+	}
+}
+
 func TestPinnedSuccessCannotClearConcurrentFailureWithSameDeadline(t *testing.T) {
 	ctx := context.Background()
 	manager := NewManager(nil, nil, nil)

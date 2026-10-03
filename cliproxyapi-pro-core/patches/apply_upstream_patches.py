@@ -6621,12 +6621,28 @@ replace_once(
 \t\tif modelKey == ""''',
     'pinnedResultIdentityMatches(result, m.auths[result.AuthID])',
 )
-replace_once(
-    auth_conductor,
-    '\t\tif result.Success {\n\t\t\tif auth.Quota.Reason == "credential_quota"',
-    '\t\tif result.Success {\n\t\t\tif _, pinned := result.Options.Metadata[pinnedResultIdentityKey]; pinned {\n\t\t\t\tclearAuthStateOnSuccess(auth, now)\n\t\t\t}\n\t\t\tif auth.Quota.Reason == "credential_quota"',
-    'if _, pinned := result.Options.Metadata[pinnedResultIdentityKey]; pinned',
-)
+if '\t\twasTerminalUnauthorized := hasUnauthorizedAuthFailure(auth)\n' in read(auth_conductor):
+    replace_once(
+        auth_conductor,
+        '\t\twasTerminalUnauthorized := hasUnauthorizedAuthFailure(auth)\n',
+        '''\t\tif result.Success {
+\t\t\tif _, pinned := result.Options.Metadata[pinnedResultIdentityKey]; pinned {
+\t\t\t\t// Identity and restriction snapshot were verified under m.mu above.
+\t\t\t\t// Only explicit recovery may clear terminal 401 state.
+\t\t\t\tauth.LastError = nil
+\t\t\t\tclearAuthStateOnSuccess(auth, now)
+\t\t\t}
+\t\t}
+\t\twasTerminalUnauthorized := hasUnauthorizedAuthFailure(auth)
+''',
+    )
+else:
+    replace_once(
+        auth_conductor,
+        '\t\tif result.Success {\n\t\t\tif auth.Quota.Reason == "credential_quota"',
+        '\t\tif result.Success {\n\t\t\tif _, pinned := result.Options.Metadata[pinnedResultIdentityKey]; pinned {\n\t\t\t\tclearAuthStateOnSuccess(auth, now)\n\t\t\t}\n\t\t\tif auth.Quota.Reason == "credential_quota"',
+        'if _, pinned := result.Options.Metadata[pinnedResultIdentityKey]; pinned',
+    )
 replace_once(
     auth_conductor,
     '''\tvar authSnapshot *Auth
@@ -6772,6 +6788,24 @@ if policy_candidate_append not in auth_conductor_text:
     write(auth_conductor, auth_conductor_text.replace(candidate_append, policy_candidate_append))
 
 auth_conductor = ROOT / 'sdk/cliproxy/auth/conductor_refresh.go'
+# v8.0.12 adds an early return for failed refresh of terminal 401 credentials.
+# Keep its terminal state, but refresh the policy-aware scheduler outside m.mu.
+if '\t\t\tif wasTerminalUnauthorized {\n' in read(auth_conductor):
+    replace_once(
+        auth_conductor,
+        '''\t\t\t\tm.auths[id] = current
+\t\t\t\tif m.scheduler != nil {
+\t\t\t\t\tm.scheduler.upsertAuth(current.Clone())
+\t\t\t\t}
+\t\t\t\tm.mu.Unlock()
+\t\t\t\tm.queueRefreshUnschedule(id)
+''',
+        '''\t\t\t\tm.auths[id] = current
+\t\t\t\tm.mu.Unlock()
+\t\t\t\tm.RefreshSchedulerEntry(id)
+\t\t\t\tm.queueRefreshUnschedule(id)
+''',
+    )
 # v7.3.18 only reschedules retryable failures. Scheduler state must still be
 # refreshed for terminal failures, after releasing the manager lock.
 replace_once(

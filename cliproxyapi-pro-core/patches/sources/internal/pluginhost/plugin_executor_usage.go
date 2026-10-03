@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/logging"
 	"github.com/router-for-me/CLIProxyAPI/v7/internal/runtime/executor/helps"
 	coreusage "github.com/router-for-me/CLIProxyAPI/v7/sdk/cliproxy/usage"
@@ -47,7 +49,12 @@ func observePluginExecutorUsage(buffer *helps.StreamUsageBuffer, format sdktrans
 	var ok bool
 	switch format {
 	case sdktranslator.FormatCodex, sdktranslator.FormatOpenAIResponse:
-		detail, ok = helps.ParseCodexUsage(payload)
+		if !stream && gjson.GetBytes(payload, "usage").IsObject() {
+			detail = helps.ParseOpenAIUsage(payload)
+			ok = pluginExecutorUsageDetailPresent(detail)
+		} else {
+			detail, ok = helps.ParseCodexUsage(payload)
+		}
 	case sdktranslator.FormatClaude:
 		if stream {
 			detail, ok = helps.ParseClaudeStreamUsage(payload)
