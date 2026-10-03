@@ -6532,8 +6532,19 @@ replace_once(
     'auth.Selected = existing.Selected',
 )
 auth_conductor_text = read(auth_conductor)
-lifecycle_scheduler_upsert = '''\tif m.scheduler != nil {
-\t\tm.scheduler.upsertAuth(authClone.Clone())
+# RefreshSchedulerEntry takes its own locked, policy-aware snapshot. Remove the
+# upstream temporary snapshot together with its consumer, retaining the unlock.
+lifecycle_scheduler_upsert = '''\t// Snapshot before unlocking: MarkResult mutates the published auth in place.
+\tvar schedulerSnapshot *Auth
+\tif m.scheduler != nil {
+\t\tschedulerSnapshot = authClone.Clone()
+\t}
+\tm.mu.Unlock()
+\tif !shouldDeferAPIKeyModelAliasRebuild(ctx) {
+\t\tm.rebuildAPIKeyModelAliasFromRuntimeConfig()
+\t}
+\tif m.scheduler != nil {
+\t\tm.scheduler.upsertAuth(schedulerSnapshot)
 \t}
 '''
 if auth_conductor_text.count(lifecycle_scheduler_upsert) != 2:
@@ -6545,7 +6556,12 @@ write(
     auth_conductor,
     auth_conductor_text.replace(
         lifecycle_scheduler_upsert,
-        '\tm.RefreshSchedulerEntry(authClone.ID)\n',
+        '''\tm.mu.Unlock()
+\tif !shouldDeferAPIKeyModelAliasRebuild(ctx) {
+\t\tm.rebuildAPIKeyModelAliasFromRuntimeConfig()
+\t}
+\tm.RefreshSchedulerEntry(authClone.ID)
+''',
     ),
 )
 
