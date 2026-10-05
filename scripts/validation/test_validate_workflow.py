@@ -76,25 +76,14 @@ class ValidateWorkflowTests(unittest.TestCase):
         self.assertIn("runtime-executor ./internal/runtime/executor", script)
         self.assertIn("sdk-cliproxy ./sdk/cliproxy", script)
 
-    def test_core_validation_applies_timeout_fixture_to_every_test_root(self) -> None:
+    def test_core_validation_applies_media_fixture_to_every_test_root(self) -> None:
         script = (ROOT / "scripts" / "validation" / "core.sh").read_text()
-        fixture = (
-            ROOT
-            / "scripts"
-            / "validation"
-            / "fixtures"
-            / "antigravity_models_timeout_cleanup.patch"
-        ).read_text()
         function_start = script.index("run_upstream_test_groups()")
         function_end = script.index("prepare_baseline_worktree()")
         self.assertIn(
             'apply_validation_fixture_adjustments "${source_root}"',
             script[function_start:function_end],
         )
-        self.assertIn("stopSlowHandler", fixture)
-        self.assertEqual(2, fixture.count("close(stopSlowHandler)"))
-        self.assertEqual(4, fixture.count("resetAntigravityCapabilityCache"))
-        self.assertIn("antigravity_models_timeout_cleanup codex_live_media_loopback", script)
         media_fixture = (ROOT / "scripts/validation/fixtures/codex_live_media_loopback.patch").read_text()
         self.assertIn("newTestLoopbackWebRTCAPI", media_fixture)
         self.assertIn("offerCandidatesAreLoopback(t, sdp)", media_fixture)

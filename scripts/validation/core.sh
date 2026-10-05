@@ -251,19 +251,16 @@ PY
 
 apply_validation_fixture_adjustments() {
   local source_root="$1"
-  local fixture_name fixture_patch
-  # These fixtures change test setup only, identically for candidate and baseline.
-  for fixture_name in antigravity_models_timeout_cleanup codex_live_media_loopback; do
-    fixture_patch="${repo_root}/scripts/validation/fixtures/${fixture_name}.patch"
-    if git -C "${source_root}" apply --unidiff-zero --reverse --check "${fixture_patch}" >/dev/null 2>&1; then
-      continue
-    fi
-    if ! git -C "${source_root}" apply --unidiff-zero --check "${fixture_patch}"; then
-      echo "Validation fixture ${fixture_name} no longer matches the selected upstream" >&2
-      return 1
-    fi
-    git -C "${source_root}" apply --unidiff-zero "${fixture_patch}" || return
-  done
+  local fixture_patch="${repo_root}/scripts/validation/fixtures/codex_live_media_loopback.patch"
+  # Change test setup only, identically for candidate and baseline.
+  if git -C "${source_root}" apply --unidiff-zero --reverse --check "${fixture_patch}" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! git -C "${source_root}" apply --unidiff-zero --check "${fixture_patch}"; then
+    echo "Validation fixture codex_live_media_loopback no longer matches the selected upstream" >&2
+    return 1
+  fi
+  git -C "${source_root}" apply --unidiff-zero "${fixture_patch}" || return
 }
 
 run_upstream_test_groups() {

@@ -1547,14 +1547,14 @@ insert_before(
 service_auth = ROOT / 'sdk/cliproxy/service_auth.go'
 replace_once(
     service_auth,
-    '''\tGlobalModelRegistry().UnregisterClient(id)
-\ts.coreManager.Remove(ctx, id)
+    '''\ts.coreManager.Remove(ctx, id)
+\tGlobalModelRegistry().UnregisterClient(id)
 ''',
-    '''\tGlobalModelRegistry().UnregisterClient(id)
+    '''\ts.coreManager.Remove(ctx, id)
+\tGlobalModelRegistry().UnregisterClient(id)
 \tif s.proApp != nil {
 \t\ts.proApp.ForgetAccountPolicy(id)
 \t}
-\ts.coreManager.Remove(ctx, id)
 \ts.authModelCommitMu.Unlock()
 ''',
     's.authModelCommitMu.Unlock()',
@@ -1728,11 +1728,12 @@ func (s *Service) unregisterModelsForCurrentAuth(ctx context.Context, auth *core
     'func (s *Service) withCurrentAuthModelCommit',
 )
 
-service_models_text = read(service_models)
-service_models_text = service_models_text.replace(
+replace_once(
+    service_models,
     '''\tif ctx.Err() != nil {
 \t\treturn
 \t}
+\ts.cancelStaleAntigravityProbes(a.ID)
 \tif a.Disabled {
 ''',
     '''\tif ctx.Err() != nil {
@@ -1742,10 +1743,12 @@ service_models_text = service_models_text.replace(
 \tif !s.isCurrentAuthModelRegistration(ctx, a) {
 \t\treturn
 \t}
+\ts.cancelStaleAntigravityProbes(a.ID)
 \tif a.Disabled {
 ''',
-    1,
+    'ctx = s.beginAuthModelRegistration(ctx, a.ID)',
 )
+service_models_text = read(service_models)
 unregister_model_call = '\tGlobalModelRegistry().UnregisterClient(a.ID)'
 if service_models_text.count(unregister_model_call) != 5:
     raise SystemExit(
@@ -1892,41 +1895,6 @@ if batch_test.count(old_wait) != 1:
 batch_test = batch_test.replace(old_wait, new_wait, 1)
 write(auth_sync_test, auth_sync_text[:batch_test_start] + batch_test + auth_sync_text[batch_test_end:])
 replace_once(auth_sync_test, '\t"sync/atomic"\n', '\t"sync"\n\t"sync/atomic"\n', '\t"sync"\n')
-
-# Release validation overlays latest models.json. Static SupportsWebSearch must
-# remain; fetched IDs only enhance. Upstream has asserted both false and true
-# for this model across releases, so compare with the static registry instead.
-excluded_models_test = ROOT / 'sdk/cliproxy/service_excluded_models_test.go'
-agent_web_search_checks = (
-    """	if agentModel.SupportsWebSearch {
-		t.Fatal("gemini-pro-agent should not support web search")
-	}
-""",
-    """	if !agentModel.SupportsWebSearch {
-		t.Fatal("gemini-pro-agent should support web search")
-	}
-""",
-)
-agent_web_search_text = read(excluded_models_test)
-if 'gemini-pro-agent web search = %v, want static %v' not in agent_web_search_text:
-    if sum(agent_web_search_text.count(check) for check in agent_web_search_checks) != 1:
-        raise SystemExit(f'expected one upstream gemini-pro-agent web-search assertion in {excluded_models_test}')
-    agent_web_search_old = next(check for check in agent_web_search_checks if check in agent_web_search_text)
-else:
-    agent_web_search_old = agent_web_search_checks[0]
-replace_once(
-    excluded_models_test,
-    agent_web_search_old,
-    """	staticAgentModel := staticByID["gemini-pro-agent"]
-	if staticAgentModel == nil {
-		t.Fatal("expected static gemini-pro-agent definition")
-	}
-	if agentModel.SupportsWebSearch != staticAgentModel.SupportsWebSearch {
-		t.Fatalf("gemini-pro-agent web search = %v, want static %v", agentModel.SupportsWebSearch, staticAgentModel.SupportsWebSearch)
-	}
-""",
-    'gemini-pro-agent web search = %v, want static %v',
-)
 
 replace_once(
     service_config_source,
@@ -4488,11 +4456,13 @@ replace_once(
     claude_stream,
     '''\t\t\tif upstreamCompleted {
 \t\t\t\tcommitClaudeContinuity(diagnosticsState, upstreamMessageID, helps.HeaderValueCaseInsensitive(httpResp.Header, "request-id"))
+\t\t\t\te.rememberClaudeOAuthToolAliases(body, oauthToolNamesReverseMap, upstreamMessageID)
 \t\t\t}
 \t\t\treturn
 ''',
     '''\t\t\tif upstreamCompleted {
 \t\t\t\tcommitClaudeContinuity(diagnosticsState, upstreamMessageID, helps.HeaderValueCaseInsensitive(httpResp.Header, "request-id"))
+\t\t\t\te.rememberClaudeOAuthToolAliases(body, oauthToolNamesReverseMap, upstreamMessageID)
 \t\t\t}
 \t\t\tterminal.publishSuccess(&usageBuffer)
 \t\t\treturn
@@ -4503,11 +4473,13 @@ replace_once(
     claude_stream,
     '''\t\tif upstreamCompleted {
 \t\t\tcommitClaudeContinuity(diagnosticsState, upstreamMessageID, helps.HeaderValueCaseInsensitive(httpResp.Header, "request-id"))
+\t\t\te.rememberClaudeOAuthToolAliases(body, oauthToolNamesReverseMap, upstreamMessageID)
 \t\t}
 \t}()
 ''',
     '''\t\tif upstreamCompleted {
 \t\t\tcommitClaudeContinuity(diagnosticsState, upstreamMessageID, helps.HeaderValueCaseInsensitive(httpResp.Header, "request-id"))
+\t\t\te.rememberClaudeOAuthToolAliases(body, oauthToolNamesReverseMap, upstreamMessageID)
 \t\t}
 \t\tterminal.publishSuccess(&usageBuffer)
 \t}()
@@ -5913,8 +5885,8 @@ for relative_path in (
     )
 replace_once(
     ROOT / 'internal/runtime/executor/xai_websockets_executor.go',
-    '\twsReqBody := buildXAIWebsocketRequestBody(prepared.body)',
-    '\twsReqBody := buildXAIWebsocketRequestBody(prepared.body)\n\treporter.ObserveUpstreamRequestModel(wsReqBody)',
+    '\twsReqBody := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)',
+    '\twsReqBody := buildXAIWebsocketRequestBody(prepared.body, prepared.finalizePayload)\n\treporter.ObserveUpstreamRequestModel(wsReqBody)',
     'reporter.ObserveUpstreamRequestModel(wsReqBody)',
 )
 aistudio_executor = ROOT / 'internal/runtime/executor/aistudio_executor.go'
@@ -6435,8 +6407,8 @@ replace_once(
 auth_conductor = ROOT / 'sdk/cliproxy/auth/conductor_lifecycle.go'
 replace_once(
     auth_conductor,
-    '\tauth.Generation = 1\n\tauthClone := auth.Clone()\n',
-    '\tauth.Generation = 1\n\trestoreQuotaProtection(auth)\n\tauthClone := auth.Clone()\n',
+    '\tauth.RegistrationEpoch = m.authEpochs[auth.ID]\n\tauth.Generation = 1\n',
+    '\tauth.RegistrationEpoch = m.authEpochs[auth.ID]\n\tauth.Generation = 1\n\trestoreQuotaProtection(auth)\n',
     'restoreQuotaProtection(auth)',
 )
 
@@ -6540,6 +6512,7 @@ lifecycle_scheduler_upsert = '''\t// Snapshot before unlocking: MarkResult mutat
 \t\tschedulerSnapshot = authClone.Clone()
 \t}
 \tm.mu.Unlock()
+\treleaseMutation()
 \tif !shouldDeferAPIKeyModelAliasRebuild(ctx) {
 \t\tm.rebuildAPIKeyModelAliasFromRuntimeConfig()
 \t}
@@ -6557,6 +6530,7 @@ write(
     auth_conductor_text.replace(
         lifecycle_scheduler_upsert,
         '''\tm.mu.Unlock()
+\treleaseMutation()
 \tif !shouldDeferAPIKeyModelAliasRebuild(ctx) {
 \t\tm.rebuildAPIKeyModelAliasFromRuntimeConfig()
 \t}
@@ -6684,9 +6658,11 @@ replace_once(
 replace_once(
     auth_conductor,
     '''\tm.mu.Unlock()
+\treleaseMutation()
 \tif m.scheduler != nil && authSnapshot != nil {
 ''',
     '''\tm.mu.Unlock()
+\treleaseMutation()
 \tqueueAuthRuntimeStats(authSnapshot, authStatsObservedAt)
 \tif m.scheduler != nil && authSnapshot != nil {
 ''',
@@ -7438,7 +7414,6 @@ format_go_writes([
     'sdk/cliproxy/service_executors.go',
     'sdk/cliproxy/service_lifecycle.go',
     'sdk/cliproxy/service_models.go',
-    'sdk/cliproxy/service_excluded_models_test.go',
     'sdk/cliproxy/executor/speed.go',
     'sdk/cliproxy/usage/manager.go',
 	'sdk/cliproxy/usage/manager_extensions.go',

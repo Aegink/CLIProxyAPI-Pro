@@ -30,7 +30,7 @@ class ValidationChangeClassificationTests(unittest.TestCase):
     def test_core_change_also_builds_source_image(self) -> None:
         for path in (
             "cliproxyapi-pro-core/patches/apply_upstream_patches.py",
-            "scripts/validation/fixtures/antigravity_models_timeout_cleanup.patch",
+            "scripts/validation/fixtures/codex_live_media_loopback.patch",
         ):
             with self.subTest(path=path):
                 decision = CLASSIFIER.classify([path])

@@ -136,6 +136,11 @@ func (m *Manager) ClearSchedulingBlock(ctx context.Context, base *Auth, model st
 	if m == nil || base == nil || revision <= 0 {
 		return ErrSchedulingBlockChanged
 	}
+	releaseMutation, err := m.lockAuthMutationContext(ctx, base.ID)
+	if err != nil {
+		return err
+	}
+	defer releaseMutation()
 	m.mu.Lock()
 	current := m.auths[base.ID]
 	if !pinnedCredentialMatches(base, current) || current.Disabled || current.Status == StatusDisabled {
@@ -144,6 +149,8 @@ func (m *Manager) ClearSchedulingBlock(ctx context.Context, base *Auth, model st
 	}
 	now := time.Now()
 	previous := current.Clone()
+	existing := current
+	current = current.Clone()
 	if model == "" {
 		if current.UpdatedAt.UnixNano() != revision ||
 			!current.NextRetryAfter.After(now) && !current.Quota.NextRecoverAt.After(now) {
@@ -181,12 +188,19 @@ func (m *Manager) ClearSchedulingBlock(ctx context.Context, base *Auth, model st
 		}
 		updateAggregatedAvailability(current, now)
 	}
-	if err := m.persist(ctx, current); err != nil {
-		*current = *previous
+	current.Generation++
+	if err := m.persistLocked(ctx, current); err != nil {
 		m.mu.Unlock()
 		return err
 	}
+	mergeAuthSaveDelta(current, previous, existing, false)
+	if existing.Generation >= current.Generation {
+		current.Generation = existing.Generation + 1
+	}
+	m.auths[base.ID] = current
+	m.notifyAuthChangeLocked(base.ID)
 	m.mu.Unlock()
+	releaseMutation()
 	m.RefreshSchedulerEntry(base.ID)
 	m.persistCooldownStates(context.Background())
 	if model != "" {
