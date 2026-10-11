@@ -1852,6 +1852,11 @@ def patch_quota_types_latest(target: Path) -> None:
 def patch_quota_provider_model_latest(target: Path) -> None:
     replace_once(
         target / 'src/utils/quota/validators.ts',
+        "  'devin',\n  'kimi',\n",
+        "  'devin',\n  'gemini-cli',\n  'kimi',\n",
+    )
+    replace_once(
+        target / 'src/utils/quota/validators.ts',
         "  if (key === 'kimi-ai') return 'kimi';\n",
         "  if (key === 'kimi-ai' || key === 'kimi.ai') return 'kimi';\n",
     )
