@@ -2146,7 +2146,7 @@ func accessAuthMiddleware(manager *sdkaccess.Manager, policy *apikeypolicy.Servi
 ''',
     'func AuthMiddleware(manager *sdkaccess.Manager, policy *apikeypolicy.Service)',
 )
-replace_once(
+replace_all_exact(
     server_middleware_source,
     '''\t\tif err == nil {
 \t\t\tif result != nil {
@@ -2155,6 +2155,10 @@ replace_once(
 \t\t\t\tif len(result.Metadata) > 0 {
 \t\t\t\t\tc.Set("accessMetadata", result.Metadata)
 \t\t\t\t}
+\t\t\t\treqCtx := coreusage.WithAPIKey(c.Request.Context(), result.Principal)
+\t\t\t\treqCtx = coreusage.WithAccessProvider(reqCtx, result.Provider)
+\t\t\t\treqCtx = coreusage.WithIsNativeKey(reqCtx, coreusage.IsNativeAccessProvider(result.Provider))
+\t\t\t\tc.Request = c.Request.WithContext(reqCtx)
 \t\t\t}
 \t\t\tc.Next()
 \t\t\treturn
@@ -2167,6 +2171,10 @@ replace_once(
 \t\t\t\tif len(result.Metadata) > 0 {
 \t\t\t\t\tc.Set("accessMetadata", result.Metadata)
 \t\t\t\t}
+\t\t\t\treqCtx := coreusage.WithAPIKey(c.Request.Context(), result.Principal)
+\t\t\t\treqCtx = coreusage.WithAccessProvider(reqCtx, result.Provider)
+\t\t\t\treqCtx = coreusage.WithIsNativeKey(reqCtx, coreusage.IsNativeAccessProvider(result.Provider))
+\t\t\t\tc.Request = c.Request.WithContext(reqCtx)
 \t\t\t\tif result.Provider == sdkaccess.DefaultAccessProviderName && policy != nil {
 \t\t\t\t\tidentity, identityErr := apikeypolicy.NewAuthenticatedAPIKeyIdentity(result.Principal)
 \t\t\t\t\tif identityErr != nil {
@@ -2187,7 +2195,7 @@ replace_once(
 \t\t\treturn
 \t\t}
 ''',
-    'requestCtx = apikeypolicy.WithDecision(requestCtx, decision)',
+    expected_count=1,
 )
 replace_once(
     server_middleware_source,
@@ -3560,7 +3568,13 @@ replace_once(
 \t\t\t\treturn h.SupportsApplyPatchModel(effectiveModelID(id))
 \t\t\t}
 \t\t}
-\t\tbody, errMarshal := codexmodels.MarshalCompact(codexmodels.BuildResponseForClientWithToolCapabilities(allModels, providersForModel, webSearchCapabilityForModel, applyPatchCapabilityForModel, h.Cfg != nil && h.Cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion))
+\t\tvar toolSearchCapabilityForModel codexmodels.ToolSearchCapabilityForModelFunc
+\t\tif responsesclaude.ClientToolSearchEnabled() {
+\t\t\ttoolSearchCapabilityForModel = func(id string) bool {
+\t\t\t\treturn h.SupportsNativeToolSearchModel(effectiveModelID(id))
+\t\t\t}
+\t\t}
+\t\tbody, errMarshal := codexmodels.MarshalCompact(codexmodels.BuildResponseForClientWithToolCapabilities(allModels, providersForModel, webSearchCapabilityForModel, applyPatchCapabilityForModel, toolSearchCapabilityForModel, h.Cfg != nil && h.Cfg.Client.Codex.OptimizeMultiAgentV2, clientVersion))
 ''',
 )
 replace_once(
@@ -3572,6 +3586,7 @@ replace_once(
 ''',
 )
 add_go_import(openai_handlers_source, '"' + import_path('internal/registry') + '"\n', '\tcodexmodels "' + import_path('internal/client/codex/models') + '"\n')
+add_go_import(openai_handlers_source, '"' + import_path('internal/registry') + '"\n', '\tresponsesclaude "' + import_path('internal/translator/claude/openai/responses') + '"\n')
 
 claude_handlers_source = ROOT / 'sdk/api/handlers/claude/code_handlers.go'
 replace_once(
@@ -5847,12 +5862,16 @@ replace_once(
 \tusageDetail := coreusage.EnsureTokenBreakdownForProvider''',
     'profileNameSnapshot = attribution.ProfileName',
 )
-replace_once(
+replace_all_exact(
     redisqueue_plugin,
     '''\t\tAPIKey:              apiKey,
+\t\tIsNativeKey:         isNativeKey,
+\t\tAccessProvider:      accessProvider,
 \t\tRequestID:           requestID,
 ''',
     '''\t\tAPIKey:              apiKey,
+\t\tIsNativeKey:         isNativeKey,
+\t\tAccessProvider:      accessProvider,
 \t\tAPIKeyPolicyID:      apiKeyPolicyID,
 \t\tProfileID:           profileID,
 \t\tProfileNameSnapshot: profileNameSnapshot,
@@ -5861,14 +5880,18 @@ replace_once(
 \t\tEffectiveModel:      effectiveModel,
 \t\tRequestID:           requestID,
 ''',
-    'APIKeyPolicyID:      apiKeyPolicyID',
+    expected_count=1,
 )
-replace_once(
+replace_all_exact(
     redisqueue_plugin,
     '''\tAPIKey              string                   `json:"api_key"`
+\tIsNativeKey         bool                     `json:"is_native_key"`
+\tAccessProvider      string                   `json:"access_provider,omitempty"`
 \tRequestID           string                   `json:"request_id"`
 ''',
     '''\tAPIKey              string                   `json:"api_key"`
+\tIsNativeKey         bool                     `json:"is_native_key"`
+\tAccessProvider      string                   `json:"access_provider,omitempty"`
 \tAPIKeyPolicyID      string                   `json:"api_key_policy_id,omitempty"`
 \tProfileID           string                   `json:"profile_id,omitempty"`
 \tProfileNameSnapshot string                   `json:"profile_name_snapshot,omitempty"`
@@ -5877,7 +5900,7 @@ replace_once(
 \tEffectiveModel      string                   `json:"effective_model,omitempty"`
 \tRequestID           string                   `json:"request_id"`
 ''',
-    '`json:"api_key_policy_id,omitempty"`',
+    expected_count=1,
 )
 replace_once(
     redisqueue_plugin,
